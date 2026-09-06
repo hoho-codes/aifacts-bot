@@ -318,12 +318,11 @@ def _wrap_text(text: str, width_chars: int = 18) -> str:
 
 def build_caption_filter(
     text: str,
+    caption_file_path: str,
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     box_color: str = "black@0.55",
 ) -> str:
-    # 1. Escape special chars FIRST, on the raw unwrapped text
     escaped = _escape_drawtext(text)
-    # 2. THEN wrap into lines
     wrapped = textwrap.fill(escaped, width=18)
     num_lines = wrapped.count("\n") + 1
 
@@ -336,12 +335,15 @@ def build_caption_filter(
     else:
         font_size = 36
 
-    # 3. Convert real newlines to drawtext's \n marker LAST, after all
-    #    other escaping is done -- nothing after this touches backslashes
-    safe_text = wrapped.replace("\n", "\\n")
+    # Write the wrapped, escaped text to a file with REAL newlines --
+    # drawtext's textfile= option reliably renders literal newlines as
+    # line breaks across ffmpeg versions, unlike \n inside text=, which
+    # has inconsistent support depending on build/version.
+    with open(caption_file_path, "w", encoding="utf-8") as f:
+        f.write(wrapped)
 
     return (
-        f"drawtext=fontfile={font_path}:text='{safe_text}':"
+        f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
         f"fontsize={font_size}:fontcolor=white:"
         f"box=1:boxcolor={box_color}:boxborderw=30:"
         f"x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=16"
@@ -357,8 +359,8 @@ def render_caption_video(
     out_w: int = 1080,
     out_h: int = 1920,
 ) -> str:
-    caption_filter = build_caption_filter(caption_text)
-    print(caption_filter)
+    caption_file_path = "assets/caption.txt"
+    caption_filter = build_caption_filter(caption_text, caption_file_path)
 
     vf = (
         f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
@@ -383,7 +385,7 @@ def render_caption_video(
 
     print(f"Caption video rendered at {output_path}")
     return output_path
-
+    
 
 def mux_narration_with_video(
     video_path: str,

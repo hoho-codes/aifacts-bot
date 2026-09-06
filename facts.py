@@ -300,12 +300,12 @@ def get_audio_duration(audio_path: str) -> float:
 def _escape_drawtext(text: str) -> str:
     """
     Escapes characters that break ffmpeg's drawtext filter syntax.
-    Order matters: backslash first (so later escapes aren't double-escaped),
-    then the filtergraph-special characters : ' [ ] and the option-separator ,
+    Applied BEFORE line-wrapping's \\n markers are inserted, so the
+    backslash-doubling step here never touches the newline escapes.
     """
     text = text.replace("\\", "\\\\")
     text = text.replace(":", "\\:")
-    text = text.replace("'", "\u2019")  # replace apostrophe with a typographic one -- avoids quote-parsing issues entirely
+    text = text.replace("'", "\u2019")
     text = text.replace(",", "\\,")
     text = text.replace("%", "\\%")
     return text
@@ -313,7 +313,7 @@ def _escape_drawtext(text: str) -> str:
 
 def _wrap_text(text: str, width_chars: int = 18) -> str:
     wrapped = textwrap.fill(text, width=width_chars)
-    return wrapped.replace("\n", "\\n")
+    return wrapped  # keep literal \n newlines here -- don't convert yet
 
 
 def build_caption_filter(
@@ -321,11 +321,12 @@ def build_caption_filter(
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     box_color: str = "black@0.55",
 ) -> str:
-    wrapped = textwrap.fill(text, width=18)
+    # 1. Escape special chars FIRST, on the raw unwrapped text
+    escaped = _escape_drawtext(text)
+    # 2. THEN wrap into lines
+    wrapped = textwrap.fill(escaped, width=18)
     num_lines = wrapped.count("\n") + 1
 
-    # Scale font size down as line count grows, so long facts still fit
-    # vertically within the frame instead of overflowing top/bottom.
     if num_lines <= 3:
         font_size = 72
     elif num_lines <= 5:
@@ -335,7 +336,10 @@ def build_caption_filter(
     else:
         font_size = 36
 
-    safe_text = _escape_drawtext(wrapped.replace("\n", "\\n"))
+    # 3. Convert real newlines to drawtext's \n marker LAST, after all
+    #    other escaping is done -- nothing after this touches backslashes
+    safe_text = wrapped.replace("\n", "\\n")
+
     return (
         f"drawtext=fontfile={font_path}:text='{safe_text}':"
         f"fontsize={font_size}:fontcolor=white:"

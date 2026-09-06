@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install requests huggingface_hub edge-tts
+        run: pip install requests huggingface_hub edge-tts pillow
 
       - name: Run daily fact short
         run: python facts.py

@@ -32,6 +32,7 @@ YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "unlisted")
 
 IMAGE_FILENAME = "assets/generated_image.png"
 AUDIO_FILENAME = "assets/generated_audio.mp3"
+CAP_VIDEO_FILENAME = "assets/captioned_video.mp4"
 VIDEO_FILENAME = "assets/generated_video.mp4"
 
 
@@ -363,26 +364,60 @@ def render_caption_video(
 def mux_narration_with_video(
     video_path: str,
     narration_path: str,
-    music_path: str,
     output_path: str,
     duration: float,
     music_volume: float = 0.15,
     narration_volume: float = 1.0,
-) -> str:
+):
+    """
+    Combines a (silent) captioned video, spoken narration, and a randomly
+    chosen background track from assets/music/*.mp3 into one final file.
+    Tries tracks in random order and falls through to the next if one is
+    missing/corrupted, same resilience pattern as coffee.py's
+    add_background_music. If no tracks are found or all fail, falls back
+    to narration-only (no music) rather than failing the whole run.
+    """
+    music_files = glob.glob("assets/music/*.mp3")
+    print(f"Found {len(music_files)} music file(s) in assets/music/")
+    random.shuffle(music_files)
+
     fade_start = max(duration - 1, 0)
-    filter_complex = (
-        f"[1:a]volume={narration_volume}[narr];"
-        f"[2:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=1,volume={music_volume}[music];"
-        f"[narr][music]amix=inputs=2:duration=first:dropout_transition=1[aout]"
-    )
+
+    for music_path in music_files:
+        print(f"Trying background music: {music_path}")
+        filter_complex = (
+            f"[1:a]volume={narration_volume}[narr];"
+            f"[2:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=1,volume={music_volume}[music];"
+            f"[narr][music]amix=inputs=2:duration=first:dropout_transition=1[aout]"
+        )
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", narration_path,
+            "-i", music_path,
+            "-filter_complex", filter_complex,
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "128k",
+            "-shortest",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"Final narrated video created at {output_path} with music: {music_path}")
+            return output_path
+        else:
+            print(f"Track failed ({music_path}), trying next if available:\n{result.stderr[-500:]}")
+
+    # No music files, or all failed -- fall back to narration-only audio
+    print("No usable music track found — muxing narration only, no music.")
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
         "-i", narration_path,
-        "-i", music_path,
-        "-filter_complex", filter_complex,
         "-map", "0:v",
-        "-map", "[aout]",
+        "-map", "1:a",
         "-c:v", "copy",
         "-c:a", "aac", "-b:a", "128k",
         "-shortest",
@@ -390,12 +425,11 @@ def mux_narration_with_video(
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"ffmpeg narration mux failed:\n{result.stderr}")
+        print(f"ffmpeg narration-only mux failed:\n{result.stderr}")
         raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
 
-    print(f"Final narrated video created at {output_path}")
+    print(f"Final narrated video created at {output_path} (no music)")
     return output_path
-
 
 def yt_refresh_access_token() -> str:
     """
@@ -476,10 +510,10 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
         return None
 
 
-def main()
+def main():
     fact = get_fact_script()
     generate_background_image(fact, IMAGE_FILENAME)
     narration_path = generate_narration(fact, AUDIO_FILENAME)
     duration = get_audio_duration(narration_path)
-    render_caption_video(IMAGE_FILENAME, fact, VIDEO_FILENAME, duration)
-    mux_narration_with_video(VIDEO_FILENAME, narration_path, "assets/music/track.mp3", VIDEO_FILENAME, duration)
+    render_caption_video(IMAGE_FILENAME, fact, CAP_VIDEO_FILENAME, duration)
+    mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, "assets/music/track.mp3", VIDEO_FILENAME, duration)

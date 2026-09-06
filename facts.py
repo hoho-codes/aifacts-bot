@@ -362,7 +362,7 @@ def render_caption_video(
     vf = (
         f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
         f"crop={out_w}:{out_h},"
-        f"boxblur=8:4,"
+        f"boxblur=2:1,"  # much lighter than before -- just takes the edge off, keeps image mostly sharp
         f"{caption_filter},"
         f"fade=t=in:st=0:d=0.4,fade=t=out:st={max(duration - 0.4, 0)}:d=0.4"
     )

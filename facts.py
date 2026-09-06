@@ -25,6 +25,14 @@ FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
+YT_CLIENT_ID = os.environ["YT_CLIENT_ID"]
+YT_CLIENT_SECRET = os.environ["YT_CLIENT_SECRET"]
+YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN"]
+YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "unlisted")
+
+IMAGE_FILENAME = "assets/generated_image.png"
+VIDEO_FILENAME = "assets/generated_video.mp4"
+
 FALLBACK_FACTS = [
     "Honey never spoils. Archaeologists have found 3,000-year-old honey in Egyptian tombs that's still edible.",
     "Octopuses have three hearts, and two of them stop beating when they swim.",
@@ -385,3 +393,82 @@ def mux_narration_with_video(
 
     print(f"Final narrated video created at {output_path}")
     return output_path
+
+
+def yt_refresh_access_token() -> str:
+    """
+    Exchange the long-lived refresh token for a fresh ~1hr access token.
+    Unlike Tumblr, YouTube/Google does NOT rotate the refresh token on
+    each use once your OAuth consent screen is in "Production" status --
+    the same refresh token keeps working indefinitely (until unused for
+    6 months, revoked, or your client secret is rotated). Store it once
+    as a repo secret and forget about it.
+ 
+    If your consent screen is still in "Testing" status, Google expires
+    refresh tokens after 7 days regardless of use -- that will silently
+    break an unattended daily cron, so this is worth resolving (submit
+    for verification / publish to production) before relying on this.
+    """
+    res = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": YT_CLIENT_ID,
+            "client_secret": YT_CLIENT_SECRET,
+            "refresh_token": YT_REFRESH_TOKEN,
+            "grant_type": "refresh_token",
+        },
+        timeout=30,
+    )
+    res.raise_for_status()
+    return res.json()["access_token"]
+ 
+ 
+def publish_to_youtube(video_path: str, title: str, description: str, tags=None):
+    try:
+        access_token = yt_refresh_access_token()
+
+        metadata = {
+            "snippet": {
+                "title": title[:100],
+                "description": description,
+                "tags": tags or ["coffee", "cafe", "shorts"],
+                "categoryId": "22",
+            },
+            "status": {
+                "privacyStatus": YT_PRIVACY_STATUS,
+                "selfDeclaredMadeForKids": False,
+            },
+        }
+
+        init_res = requests.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos"
+            "?uploadType=resumable&part=snippet,status",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Type": "video/mp4",
+            },
+            json=metadata,
+            timeout=30,
+        )
+        if not init_res.ok:
+            print(f"YouTube init error body: {init_res.text}")  # <-- add this
+        init_res.raise_for_status()
+        upload_url = init_res.headers["Location"]
+
+        with open(video_path, "rb") as f:
+            video_bytes = f.read()
+
+        upload_res = requests.put(
+            upload_url,
+            headers={"Content-Type": "video/mp4"},
+            data=video_bytes,
+            timeout=180,
+        )
+        if not upload_res.ok:
+            print(f"YouTube upload error body: {upload_res.text}")  # <-- and this
+        upload_res.raise_for_status()
+        return upload_res
+    except Exception as e:
+        print(f"YouTube error: {e}")
+        return None

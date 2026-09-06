@@ -19,6 +19,7 @@ import random
 import subprocess
 import textwrap
 import requests
+import glob
 
 FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
 

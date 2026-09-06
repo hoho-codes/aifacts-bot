@@ -511,6 +511,28 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
         return None
 
 
+def commit_video():
+    """
+    Commits and pushes the final video to the repo, same pattern as
+    coffee.py's commit_image(). GitHub Actions runners are ephemeral --
+    without this, the generated file disappears the moment the job ends.
+    Requires `permissions: contents: write` in the workflow YAML.
+    """
+    print("Committing video to repo...")
+    subprocess.run(["git", "config", "user.name", "facts-bot"])
+    subprocess.run(["git", "config", "user.email", "facts-bot@users.noreply.github.com"])
+    subprocess.run(["git", "add", VIDEO_FILENAME])
+    commit_result = subprocess.run(["git", "commit", "-m", "Daily fact video"], capture_output=True, text=True)
+    if commit_result.returncode != 0:
+        print(f"Nothing to commit or commit failed:\n{commit_result.stderr}")
+        return
+    push_result = subprocess.run(["git", "push"], capture_output=True, text=True)
+    if push_result.returncode != 0:
+        print(f"Video push failed:\n{push_result.stderr}")
+    else:
+        print("Video committed and pushed successfully.")
+
+
 def main():
     fact = get_fact_script()
     generate_background_image(fact, IMAGE_FILENAME)
@@ -518,6 +540,19 @@ def main():
     duration = get_audio_duration(narration_path)
     render_caption_video(IMAGE_FILENAME, fact, CAP_VIDEO_FILENAME, duration)
     mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration)
+
+    commit_video()
+
+    title = fact[:95] + " #Shorts"
+    description = f"{fact}\n\n#facts #shorts #didyouknow"
+    res = publish_to_youtube(VIDEO_FILENAME, title, description, tags=["facts", "shorts", "didyouknow"])
+
+    if res is not None and res.ok:
+        print(f"Uploaded Short: {res.json().get('id')}")
+    else:
+        print("YouTube upload failed; see error above.")
+        raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()

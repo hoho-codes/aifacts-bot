@@ -517,7 +517,7 @@ def main():
     narration_path = generate_narration(fact, AUDIO_FILENAME)
     duration = get_audio_duration(narration_path)
     render_caption_video(IMAGE_FILENAME, fact, CAP_VIDEO_FILENAME, duration)
-    mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, "assets/music/track.mp3", VIDEO_FILENAME, duration)
+    mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration)
 
 if __name__ == "__main__":
     main()

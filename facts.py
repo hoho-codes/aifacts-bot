@@ -89,11 +89,12 @@ def polish_fact_with_groq(raw_fact: str) -> str:
         return raw_fact
 
     system_instruction = (
-        "You rewrite trivia facts into punchy, short-form video scripts. "
-        "Keep it under 30 words, one or two short sentences, spoken-language "
-        "tone, no hashtags, no emojis, no quotation marks. Open with a hook "
-        "if the original fact doesn't already have one. Return ONLY the "
-        "rewritten fact, nothing else."
+        "You rewrite trivia facts into short-form video narration scripts. "
+        "Expand the fact with a bit of context or a follow-up detail so it "
+        "feels like a mini-explanation, not just a one-liner -- aim for "
+        "40 to 60 words, two to three sentences, spoken-language tone, "
+        "no hashtags, no emojis, no quotation marks. Open with a hook. "
+        "Return ONLY the rewritten script, nothing else."
     )
 
     last_err = None
@@ -111,7 +112,7 @@ def polish_fact_with_groq(raw_fact: str) -> str:
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": raw_fact},
                     ],
-                    "max_tokens": 200,
+                    "max_tokens": 300,
                     "temperature": 0.9,
                     "reasoning_effort": "low",
                 },
@@ -257,9 +258,8 @@ TTS_VOICES = [
 
 async def _generate_tts_async(text: str, voice: str, out_path: str) -> None:
     import edge_tts
-    communicate = edge_tts.Communicate(text, voice)
+    communicate = edge_tts.Communicate(text, voice, rate="-10%")
     await communicate.save(out_path)
-
 
 def generate_narration(text: str, out_path: str, voice: str = None) -> str:
     voice = voice or random.choice(TTS_VOICES)
@@ -320,7 +320,7 @@ def build_caption_filter(
     text: str,
     caption_file_path: str,
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    box_color: str = "black@0.55",
+    box_color: str = "black@0.15",  # was 0.55 -- much more transparent
 ) -> str:
     escaped = _escape_drawtext(text)
     wrapped = textwrap.fill(escaped, width=18)
@@ -335,17 +335,14 @@ def build_caption_filter(
     else:
         font_size = 36
 
-    # Write the wrapped, escaped text to a file with REAL newlines --
-    # drawtext's textfile= option reliably renders literal newlines as
-    # line breaks across ffmpeg versions, unlike \n inside text=, which
-    # has inconsistent support depending on build/version.
     with open(caption_file_path, "w", encoding="utf-8") as f:
         f.write(wrapped)
 
     return (
         f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
         f"fontsize={font_size}:fontcolor=white:"
-        f"box=1:boxcolor={box_color}:boxborderw=30:"
+        f"box=1:boxcolor={box_color}:boxborderw=12:"  # was 30 -- tighter padding, less box visible around text
+        f"shadowcolor=black@0.8:shadowx=2:shadowy=2:"  # add a drop shadow so text stays legible without a heavy box
         f"x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=16"
     )
 

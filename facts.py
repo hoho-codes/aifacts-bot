@@ -298,12 +298,17 @@ def get_audio_duration(audio_path: str) -> float:
 # ---------------------------------------------------------------------------
 
 def _escape_drawtext(text: str) -> str:
-    return (
-        text.replace("\\", "\\\\\\\\")
-        .replace(":", "\\:")
-        .replace("'", "\\'")
-        .replace("%", "\\%")
-    )
+    """
+    Escapes characters that break ffmpeg's drawtext filter syntax.
+    Order matters: backslash first (so later escapes aren't double-escaped),
+    then the filtergraph-special characters : ' [ ] and the option-separator ,
+    """
+    text = text.replace("\\", "\\\\")
+    text = text.replace(":", "\\:")
+    text = text.replace("'", "\u2019")  # replace apostrophe with a typographic one -- avoids quote-parsing issues entirely
+    text = text.replace(",", "\\,")
+    text = text.replace("%", "\\%")
+    return text
 
 
 def _wrap_text(text: str, width_chars: int = 18) -> str:

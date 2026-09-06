@@ -1,0 +1,37 @@
+name: Daily Fact Short
+
+on:
+  schedule:
+    - cron: "0 15 * * *"   # 15:00 UTC daily — adjust to your preferred time, offset from the coffee bot's schedule
+  workflow_dispatch: {}      # allows manual runs from the Actions tab for testing
+
+permissions:
+  contents: write             # needed if you later add git commit/push steps (e.g. logging, image archiving)
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20        # fail fast if something hangs rather than consuming Action minutes indefinitely
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests huggingface_hub edge-tts
+
+      - name: Run daily fact short
+        run: python facts.py
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID_FACTS }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET_FACTS }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN_FACTS }}
+          YT_PRIVACY_STATUS: ${{ secrets.YT_PRIVACY_STATUS_FACTS }}

@@ -1,5 +1,5 @@
 """
-facts_pipeline.py
+facts.py
 
 Standalone helpers for a "random facts" video pipeline: fetch a raw fact,
 polish it with Groq into a punchy short-form script, generate a matching
@@ -31,7 +31,9 @@ YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN"]
 YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "unlisted")
 
 IMAGE_FILENAME = "assets/generated_image.png"
+AUDIO_FILENAME = "assets/generated_audio.mp3"
 VIDEO_FILENAME = "assets/generated_video.mp4"
+
 
 FALLBACK_FACTS = [
     "Honey never spoils. Archaeologists have found 3,000-year-old honey in Egyptian tombs that's still edible.",
@@ -472,3 +474,12 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
     except Exception as e:
         print(f"YouTube error: {e}")
         return None
+
+
+def main()
+    fact = get_fact_script()
+    generate_background_image(fact, IMAGE_FILENAME)
+    narration_path = generate_narration(fact, AUDIO_FILENAME)
+    duration = get_audio_duration(narration_path)
+    render_caption_video(IMAGE_FILENAME, fact, VIDEO_FILENAME, duration)
+    mux_narration_with_video(VIDEO_FILENAME, narration_path, "assets/music/track.mp3", VIDEO_FILENAME, duration)

@@ -319,10 +319,23 @@ def _wrap_text(text: str, width_chars: int = 18) -> str:
 def build_caption_filter(
     text: str,
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    font_size: int = 72,
     box_color: str = "black@0.55",
 ) -> str:
-    safe_text = _escape_drawtext(_wrap_text(text))
+    wrapped = textwrap.fill(text, width=18)
+    num_lines = wrapped.count("\n") + 1
+
+    # Scale font size down as line count grows, so long facts still fit
+    # vertically within the frame instead of overflowing top/bottom.
+    if num_lines <= 3:
+        font_size = 72
+    elif num_lines <= 5:
+        font_size = 56
+    elif num_lines <= 7:
+        font_size = 44
+    else:
+        font_size = 36
+
+    safe_text = _escape_drawtext(wrapped.replace("\n", "\\n"))
     return (
         f"drawtext=fontfile={font_path}:text='{safe_text}':"
         f"fontsize={font_size}:fontcolor=white:"

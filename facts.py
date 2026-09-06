@@ -358,6 +358,7 @@ def render_caption_video(
     out_h: int = 1920,
 ) -> str:
     caption_filter = build_caption_filter(caption_text)
+    print(caption_filter)
 
     vf = (
         f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"

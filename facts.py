@@ -321,27 +321,18 @@ def build_caption_filter(
 ) -> str:
     escaped = _escape_drawtext(text)
 
-    # Pick a font size based on total text length first, then compute a
-    # wrap width in characters that makes each line come close to
-    # spanning the full frame width at that font size -- rather than a
-    # fixed character count that was only right for one specific size.
     word_count = len(text.split())
     if word_count <= 15:
-        font_size = 72
+        font_size = 88
     elif word_count <= 30:
-        font_size = 56
+        font_size = 68
     elif word_count <= 50:
-        font_size = 44
+        font_size = 54
     else:
-        font_size = 36
+        font_size = 44
 
-    # DejaVu Sans Bold at a given pixel size averages roughly
-    # 0.58 * font_size px per character. Dividing the frame width by
-    # that gives a character count that fills close to the full width
-    # before wrapping to the next line, with a small margin so text
-    # doesn't touch the screen edges.
     avg_char_width_px = font_size * 0.58
-    usable_width_px = out_w - 80  # leave ~40px margin on each side
+    usable_width_px = out_w - 80
     wrap_width_chars = max(int(usable_width_px / avg_char_width_px), 8)
 
     wrapped = textwrap.fill(escaped, width=wrap_width_chars)

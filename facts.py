@@ -337,13 +337,33 @@ def build_caption_filter(
     with open(caption_file_path, "w", encoding="utf-8") as f:
         f.write(wrapped)
 
-    return (
+    # Estimate the total text block height in pixels so drawbox can be
+    # sized to match: roughly font_size * num_lines, plus per-line
+    # spacing, plus vertical padding. This is an approximation since
+    # drawtext computes exact glyph metrics at render time that drawbox
+    # can't query -- err generously so the box comfortably contains
+    # the text rather than clipping it.
+    line_spacing = 16
+    est_text_height = (font_size * num_lines) + (line_spacing * (num_lines - 1))
+    box_padding = 60
+    bar_height = est_text_height + box_padding
+
+    # drawbox: a solid full-width bar anchored to the bottom of the frame
+    drawbox_filter = (
+        f"drawbox=x=0:y={out_h}-{bar_height}:w={out_w}:h={bar_height}:"
+        f"color={box_color}:t=fill"
+    )
+
+    # drawtext: no box=1 here anymore -- drawbox behind it handles the
+    # background, drawtext just renders the text on top
+    drawtext_filter = (
         f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
         f"fontsize={font_size}:fontcolor=white:"
-        f"box=1:boxcolor={box_color}:boxw={out_w}:boxh=text_h+80:"
         f"shadowcolor=black@0.8:shadowx=2:shadowy=2:"
-        f"x=(w-text_w)/2:y=h-text_h-60:line_spacing=16"
+        f"x=(w-text_w)/2:y=h-text_h-{box_padding // 2}:line_spacing={line_spacing}"
     )
+
+    return f"{drawbox_filter},{drawtext_filter}"
     
 
 def render_caption_video(

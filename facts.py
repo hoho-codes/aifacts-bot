@@ -72,10 +72,11 @@ EFFECTS_WEIGHTED = [
 ]
 
 CAPTION_COLOR_PALETTES = [
-    {"fontcolor": "0xFFF8E7", "bordercolor": "0x1A1A1A@0.85"},  # warm cream / near-black
-    {"fontcolor": "0xFFFFFF", "bordercolor": "0x0D1B2A@0.85"},  # white / deep navy
-    {"fontcolor": "0xFFE8D6", "bordercolor": "0x2B1B17@0.85"},  # peach / espresso brown
-    {"fontcolor": "0xF5F5F5", "bordercolor": "0x111111@0.9"},   # soft white / black
+    {"fontcolor": "0xFFEE00", "bordercolor": "0x000000@0.9"},   # bright yellow / black
+    {"fontcolor": "0x00F0FF", "bordercolor": "0x001A2E@0.9"},   # electric cyan / deep navy
+    {"fontcolor": "0xFF2E63", "bordercolor": "0x1A0010@0.9"},   # hot pink / near-black
+    {"fontcolor": "0x39FF14", "bordercolor": "0x0A1A00@0.9"},   # neon green / dark
+    {"fontcolor": "0xFFFFFF", "bordercolor": "0xFF6B00@0.9"},   # white text / bold orange border
 ]
 
 def weighted_choice(pairs):
@@ -485,6 +486,7 @@ def _build_single_caption_filter(
         f"fontsize={font_size}:fontcolor={palette['fontcolor']}:"
         f"borderw=3:bordercolor={palette['bordercolor']}:"
         f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
+        f"text_align=C:"
         f"x=(w-text_w)/2:y={y_expr}:line_spacing=16{enable_part}"
     )
 

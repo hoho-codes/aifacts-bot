@@ -688,14 +688,6 @@ def mux_narration_with_video(
     music_volume: float = 0.15,
     narration_volume: float = 1.0,
 ):
-    """
-    Combines a (silent) captioned video, spoken narration, and a randomly
-    chosen background track from assets/music/*.mp3 into one final file.
-    Tries tracks in random order and falls through to the next if one is
-    missing/corrupted, same resilience pattern as coffee.py's
-    add_background_music. If no tracks are found or all fail, falls back
-    to narration-only (no music) rather than failing the whole run.
-    """
     music_files = glob.glob("assets/music/*.mp3")
     print(f"Found {len(music_files)} music file(s) in assets/music/")
     random.shuffle(music_files)
@@ -705,7 +697,7 @@ def mux_narration_with_video(
     for music_path in music_files:
         print(f"Trying background music: {music_path}")
         filter_complex = (
-            f"[1:a]volume={narration_volume}[narr];"
+            f"[1:a]apad,volume={narration_volume}[narr];"
             f"[2:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=1,volume={music_volume}[music];"
             f"[narr][music]amix=inputs=2:duration=first:dropout_transition=1[aout]"
         )
@@ -719,7 +711,7 @@ def mux_narration_with_video(
             "-map", "[aout]",
             "-c:v", "copy",
             "-c:a", "aac", "-b:a", "128k",
-            "-shortest",
+            "-t", str(duration),
             output_path,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -735,11 +727,12 @@ def mux_narration_with_video(
         "ffmpeg", "-y",
         "-i", video_path,
         "-i", narration_path,
+        "-filter_complex", "[1:a]apad[aout]",
         "-map", "0:v",
-        "-map", "1:a",
+        "-map", "[aout]",
         "-c:v", "copy",
         "-c:a", "aac", "-b:a", "128k",
-        "-shortest",
+        "-t", str(duration),
         output_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)

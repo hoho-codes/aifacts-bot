@@ -231,6 +231,69 @@ def build_image_prompt_with_groq(fact_text: str) -> str:
     return f"A simple illustration representing: {fact_text}. {style}."
 
 
+def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
+    """
+    Generates a short two-part on-screen caption from the fact: a hook line
+    ("Did You Know?!") and a punchy answer line (a few words, not the full
+    narration). Used only for the burned-in caption -- narration still uses
+    the full polished fact_text from get_fact_script().
+    """
+    fallback_hook = random.choice(["Did You Know?!", "Wait, What?!", "Bet You Didn't Know"])
+    fallback_answer = textwrap.shorten(fact_text, width=60, placeholder="...")
+
+    if not GROQ_API_KEY:
+        print("No GROQ_API_KEY set; using fallback caption.")
+        return fallback_hook, fallback_answer
+
+    system_instruction = (
+        "You write short on-screen captions for a trivia Shorts video. "
+        "Given a fact script, return TWO lines separated by '|||': "
+        "the first is a short catchy hook (3-5 words, e.g. 'Did You Know?!' "
+        "or a variation), the second is the punchiest single detail from the "
+        "fact rewritten as a short, catchy phrase (under 8 words, no full "
+        "sentence needed). No hashtags, no emojis, no quotation marks. "
+        "Return ONLY 'hook|||answer', nothing else."
+    )
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-oss-20b",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": fact_text},
+                    ],
+                    "max_tokens": 150,
+                    "temperature": 1.0,
+                    "reasoning_effort": "low",
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            raw = res.json()["choices"][0]["message"]["content"].strip().strip('"')
+            if "|||" not in raw:
+                raise ValueError(f"Missing '|||' separator in caption response: {raw!r}")
+            hook, answer = raw.split("|||", 1)
+            hook, answer = hook.strip(), answer.strip()
+            if not hook or not answer:
+                raise ValueError("Groq returned an empty hook or answer")
+            print(f"Caption -> hook: {hook!r} | answer: {answer!r}")
+            return hook, answer
+        except Exception as e:
+            last_err = e
+            print(f"generate_caption_with_groq attempt {attempt + 1} failed ({e}); retrying...")
+
+    print(f"Groq caption generation failed after retries ({last_err}); using fallback caption.")
+    return fallback_hook, fallback_answer
+    
+
 def generate_background_image(
     fact_text: str,
     out_path: str,
@@ -279,8 +342,6 @@ def generate_background_image(
 TTS_VOICES = [
     "en-US-AriaNeural",
     "en-US-GuyNeural",
-    "en-US-JennyNeural",
-    "en-GB-SoniaNeural",
     "en-GB-RyanNeural",
 ]
 
@@ -386,6 +447,68 @@ def build_caption_filter(
         f"x=(w-text_w)/2:y=h-text_h-{bottom_padding}:line_spacing={line_spacing}"
     )
 
+def _build_single_caption_filter(
+    text: str,
+    caption_file_path: str,
+    font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    out_w: int = 1080,
+    enable_expr: str = None,
+    position: str = "bottom",   # "top" or "bottom"
+    top_padding: int = 100,
+    bottom_padding: int = 60,
+) -> str:
+    escaped = _escape_drawtext(text)
+
+    word_count = len(text.split())
+    if word_count <= 5:
+        font_size = 100
+    elif word_count <= 10:
+        font_size = 80
+    else:
+        font_size = 64
+
+    avg_char_width_px = font_size * 0.58
+    usable_width_px = out_w - 80
+    wrap_width_chars = max(int(usable_width_px / avg_char_width_px), 8)
+
+    wrapped = textwrap.fill(escaped, width=wrap_width_chars)
+    with open(caption_file_path, "w", encoding="utf-8") as f:
+        f.write(wrapped)
+
+    palette = random.choice(CAPTION_COLOR_PALETTES)
+    enable_part = f":enable='{enable_expr}'" if enable_expr else ""
+    y_expr = f"{top_padding}" if position == "top" else f"h-text_h-{bottom_padding}"
+
+    return (
+        f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
+        f"fontsize={font_size}:fontcolor={palette['fontcolor']}:"
+        f"borderw=3:bordercolor={palette['bordercolor']}:"
+        f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
+        f"x=(w-text_w)/2:y={y_expr}:line_spacing=16{enable_part}"
+    )
+
+
+def build_two_part_caption_filter(
+    hook_text: str,
+    answer_text: str,
+    duration: float,
+    out_w: int = 1080,
+    hook_duration: float = 1.5,
+) -> str:
+    hook_duration = min(hook_duration, max(duration - 0.5, 0.5))
+
+    hook_filter = _build_single_caption_filter(
+        hook_text, "assets/caption_hook.txt", out_w=out_w,
+        enable_expr=f"between(t,0,{hook_duration})",
+        position="top",
+    )
+    answer_filter = _build_single_caption_filter(
+        answer_text, "assets/caption_answer.txt", out_w=out_w,
+        enable_expr=f"between(t,{hook_duration},{duration})",
+        position="bottom",
+    )
+    return f"{hook_filter},{answer_filter}"
+
 def build_motion_filter(effect_name: str, duration: float, fps: int = 30) -> str:
     total_frames = max(int(duration * fps), 1)
     baseline_frames = 5 * fps
@@ -407,15 +530,15 @@ def build_motion_filter(effect_name: str, duration: float, fps: int = 30) -> str
 
 def render_caption_video(
     background_path: str,
-    caption_text: str,
+    hook_text: str,
+    answer_text: str,
     output_path: str,
     duration: float,
     fps: int = 30,
     out_w: int = 1080,
     out_h: int = 1920,
 ) -> str:
-    caption_file_path = "assets/caption.txt"
-    caption_filter = build_caption_filter(caption_text, caption_file_path, out_w=out_w)
+    caption_filter = build_two_part_caption_filter(hook_text, answer_text, duration, out_w=out_w)
 
     effect = weighted_choice(EFFECTS_WEIGHTED)
     print(f"Selected motion effect: {effect}")
@@ -741,11 +864,12 @@ def commit_video():
 
 
 def main():
-    fact = get_fact_script()
+    fact = get_fact_script()                     # full script -> narration only
+    hook, answer = generate_caption_with_groq(fact)  # short two-part on-screen caption
     generate_background_image(fact, IMAGE_FILENAME)
     narration_path = generate_narration(fact, AUDIO_FILENAME)
     duration = get_audio_duration(narration_path)
-    render_caption_video(IMAGE_FILENAME, fact, CAP_VIDEO_FILENAME, duration)
+    render_caption_video(IMAGE_FILENAME, hook, answer, CAP_VIDEO_FILENAME, duration)
     mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration)
 
     commit_video()

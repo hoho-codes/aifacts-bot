@@ -592,7 +592,93 @@ def render_caption_video(
 
     print(f"Caption video rendered at {output_path} with effect '{effect}'")
     return output_path
-    
+
+
+def build_outro_filter(
+    text: str = "Subscribe for More",
+    font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    out_w: int = 1080,
+) -> str:
+    """
+    Simple centered outro text filter -- large, bold, high-contrast,
+    no fancy styling since it only needs to read clearly for ~1.5s.
+    """
+    escaped = _escape_drawtext(text)
+    return (
+        f"drawtext=fontfile={font_path}:text='{escaped}':"
+        f"fontsize=76:fontcolor=white:"
+        f"borderw=4:bordercolor=black@0.9:"
+        f"text_align=C:"
+        f"x=(w-text_w)/2:y=(h-text_h)/2"
+    )
+
+
+def render_outro_clip(
+    background_path: str,
+    output_path: str,
+    duration: float = 1.5,
+    fps: int = 30,
+    out_w: int = 1080,
+    out_h: int = 1920,
+) -> str:
+    """
+    Renders a short freeze-frame outro: the same background image, held
+    still, with "Subscribe for More" burned in. Appended after the main
+    video via concat so the video ends on a clear call-to-action.
+    """
+    outro_filter = build_outro_filter(out_w=out_w)
+
+    vf = (
+        f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
+        f"crop={out_w}:{out_h},"
+        f"boxblur=8:4,"  # heavier blur than the main video -- outro is text-first, image is just backdrop
+        f"{outro_filter},"
+        f"fade=t=in:st=0:d=0.3"
+    )
+
+    cmd = [
+        "ffmpeg", "-y", "-loop", "1", "-i", background_path,
+        "-vf", vf,
+        "-t", str(duration),
+        "-r", str(fps),
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg outro render failed:\n{result.stderr}")
+        raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
+
+    print(f"Outro clip rendered at {output_path}")
+    return output_path
+
+
+def concat_video_with_outro(main_video_path: str, outro_path: str, output_path: str) -> str:
+    """
+    Concatenates the main captioned video with the outro clip using
+    ffmpeg's concat demuxer. Both inputs must already share the same
+    codec/resolution/fps, which they do here (both produced by the same
+    libx264/1080x1920/30fps pipeline).
+    """
+    concat_list_path = "assets/concat_list.txt"
+    with open(concat_list_path, "w") as f:
+        f.write(f"file '{os.path.abspath(main_video_path)}'\n")
+        f.write(f"file '{os.path.abspath(outro_path)}'\n")
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_list_path,
+        "-c", "copy",
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg concat failed:\n{result.stderr}")
+        raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
+
+    print(f"Video with outro created at {output_path}")
+    return output_path
+
 
 def mux_narration_with_video(
     video_path: str,
@@ -881,13 +967,18 @@ def commit_video():
 
 
 def main():
-    fact = get_fact_script()                     # full script -> narration only
-    hook, answer = generate_caption_with_groq(fact)  # short two-part on-screen caption
+    fact = get_fact_script()
+    hook, answer = generate_caption_with_groq(fact)
     generate_background_image(fact, IMAGE_FILENAME)
     narration_path = generate_narration(fact, AUDIO_FILENAME)
     duration = get_audio_duration(narration_path)
     render_caption_video(IMAGE_FILENAME, hook, answer, CAP_VIDEO_FILENAME, duration)
-    mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration)
+
+    outro_path = "assets/outro_clip.mp4"
+    render_outro_clip(IMAGE_FILENAME, outro_path)
+    concat_video_with_outro(CAP_VIDEO_FILENAME, outro_path, CAP_VIDEO_FILENAME)
+
+    mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration + 1.5)
 
     commit_video()
 

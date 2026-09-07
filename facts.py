@@ -797,12 +797,6 @@ def generate_youtube_title(fact_text: str) -> str:
 
 
 def generate_youtube_description(fact_text: str) -> str:
-    """
-    Generates a nicely formatted, multi-line YouTube description from the
-    fact script -- a short expansion plus relevant hashtags, rather than
-    just reusing the narration text verbatim. Falls back to the raw fact
-    plus a fixed hashtag block if Groq fails.
-    """
     fallback_description = f"{fact_text}\n\n#facts #shorts #didyouknow"
 
     if not GROQ_API_KEY:
@@ -833,16 +827,19 @@ def generate_youtube_description(fact_text: str) -> str:
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": fact_text},
                     ],
-                    "max_tokens": 200,
+                    "max_tokens": 500,   # was 200 -- reasoning overhead was eating most of the budget
                     "temperature": 0.9,
                     "reasoning_effort": "low",
                 },
                 timeout=30,
             )
             res.raise_for_status()
-            description = res.json()["choices"][0]["message"]["content"].strip().strip('"')
-            if not description:
-                raise ValueError("Groq returned an empty description")
+            choice = res.json()["choices"][0]
+            description = choice["message"]["content"].strip().strip('"')
+            if choice.get("finish_reason") == "length":
+                print(f"Warning: description generation hit the token limit (finish_reason=length): {description!r}")
+            if not description or len(description) < 30:
+                raise ValueError(f"Groq returned an empty or suspiciously short description: {description!r}")
             print(f"Generated description: {description}")
             return description
         except Exception as e:

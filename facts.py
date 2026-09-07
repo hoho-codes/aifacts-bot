@@ -240,7 +240,7 @@ def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
     the full polished fact_text from get_fact_script().
     """
     fallback_hook = random.choice(["Did You Know?!", "Wait, What?!", "Bet You Didn't Know"])
-    fallback_answer = textwrap.shorten(fact_text, width=60, placeholder="...")
+    fallback_answer = textwrap.shorten(fact_text.split(".")[0], width=60, placeholder="...")
 
     if not GROQ_API_KEY:
         print("No GROQ_API_KEY set; using fallback caption.")

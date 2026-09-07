@@ -52,6 +52,19 @@ IMAGE_STYLE_MODIFIERS = [
 ]
 
 
+EFFECTS_WEIGHTED = [
+    ("zoompan_in", 25),
+    ("zoompan_out", 20),
+    ("pan_horizontal", 20),
+    ("breathing_zoom", 20),
+    ("color_drift", 15),
+]
+
+
+def weighted_choice(pairs):
+    items, weights = zip(*pairs)
+    return random.choices(items, weights=weights, k=1)[0]
+
 # ---------------------------------------------------------------------------
 # 1. Fetch a raw fact from the free uselessfacts API
 # ---------------------------------------------------------------------------
@@ -351,7 +364,26 @@ def build_caption_filter(
         f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
         f"x=(w-text_w)/2:y=h-text_h-{bottom_padding}:line_spacing={line_spacing}"
     )
-    
+
+
+def build_motion_filter(effect_name: str, duration: float, fps: int = 30) -> str:
+    total_frames = max(int(duration * fps), 1)
+    baseline_frames = 5 * fps
+
+    zoom_increment = 0.0007 * (baseline_frames / total_frames)
+    pan_speed = 40  # px/sec
+    breathing_cycle_frames = 10
+    color_drift_increment = 0.0006 * (baseline_frames / total_frames)
+
+    filters = {
+        "zoompan_in": f"zoompan=z='min(zoom+{zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps}",
+        "zoompan_out": f"zoompan=z='if(eq(on,1),1.3,max(1.001,zoom-{zoom_increment}))':d={total_frames}:s=1080x1920:fps={fps}",
+        "pan_horizontal": f"crop=1080:1920:x='min(t*{pan_speed},iw-1080)':y=0",
+        "breathing_zoom": f"zoompan=z='1.1+0.05*sin(on/{breathing_cycle_frames})':d={total_frames}:s=1080x1920:fps={fps}",
+        "color_drift": f"eq=saturation=1.1,zoompan=z='min(zoom+{color_drift_increment},1.25)':d={total_frames}:s=1080x1920:fps={fps}",
+    }
+    return filters.get(effect_name, filters["zoompan_in"])
+
 
 def render_caption_video(
     background_path: str,
@@ -365,9 +397,21 @@ def render_caption_video(
     caption_file_path = "assets/caption.txt"
     caption_filter = build_caption_filter(caption_text, caption_file_path, out_w=out_w)
 
+    effect = weighted_choice(EFFECTS_WEIGHTED)
+    print(f"Selected motion effect: {effect}")
+    motion_filter = build_motion_filter(effect, duration, fps)
+
+    # pan_horizontal needs extra source width to pan across, since it
+    # doesn't zoom -- give it a wider scale than the other zoompan-based
+    # effects, which only need to fill the frame before zooming in.
+    if effect == "pan_horizontal":
+        scale_crop = f"scale=1600:1920:force_original_aspect_ratio=increase"
+    else:
+        scale_crop = f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,crop={out_w}:{out_h}"
+
     vf = (
-        f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
-        f"crop={out_w}:{out_h},"
+        f"{scale_crop},"
+        f"{motion_filter},"
         f"boxblur=3:2,"
         f"{caption_filter},"
         f"fade=t=in:st=0:d=0.4,fade=t=out:st={max(duration - 0.4, 0)}:d=0.4"
@@ -386,7 +430,7 @@ def render_caption_video(
         print(f"ffmpeg caption render failed:\n{result.stderr}")
         raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
 
-    print(f"Caption video rendered at {output_path}")
+    print(f"Caption video rendered at {output_path} with effect '{effect}'")
     return output_path
     
 

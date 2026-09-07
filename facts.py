@@ -699,7 +699,7 @@ def mux_narration_with_video(
     music_files = glob.glob("assets/music/*.mp3")
     print(f"Found {len(music_files)} music file(s) in assets/music/")
     random.shuffle(music_files)
-    duration = duration + 1.5
+
     fade_start = max(duration - 1, 0)
 
     for music_path in music_files:

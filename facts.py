@@ -453,9 +453,10 @@ def _build_single_caption_filter(
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     out_w: int = 1080,
     enable_expr: str = None,
-    position: str = "bottom",   # "top" or "bottom"
+    position: str = "bottom",
     top_padding: int = 100,
     bottom_padding: int = 60,
+    palette: dict = None,
 ) -> str:
     escaped = _escape_drawtext(text)
 
@@ -475,7 +476,7 @@ def _build_single_caption_filter(
     with open(caption_file_path, "w", encoding="utf-8") as f:
         f.write(wrapped)
 
-    palette = random.choice(CAPTION_COLOR_PALETTES)
+    palette = palette or random.choice(CAPTION_COLOR_PALETTES)
     enable_part = f":enable='{enable_expr}'" if enable_expr else ""
     y_expr = f"{top_padding}" if position == "top" else f"h-text_h-{bottom_padding}"
 
@@ -493,21 +494,27 @@ def build_two_part_caption_filter(
     answer_text: str,
     duration: float,
     out_w: int = 1080,
-    hook_duration: float = 1.5,
+    answer_delay: float = 1.5,
 ) -> str:
-    hook_duration = min(hook_duration, max(duration - 0.5, 0.5))
+    """
+    Hook stays visible for the whole video (top). Answer appears partway
+    through, at answer_delay seconds, and stays until the end (bottom).
+    """
+    answer_delay = min(answer_delay, max(duration - 0.3, 0))
+    palette = random.choice(CAPTION_COLOR_PALETTES)  # shared so hook/answer match
 
     hook_filter = _build_single_caption_filter(
         hook_text, "assets/caption_hook.txt", out_w=out_w,
-        enable_expr=f"between(t,0,{hook_duration})",
-        position="top",
+        enable_expr=None,   # no enable clause -> visible for the entire clip
+        position="top", palette=palette,
     )
     answer_filter = _build_single_caption_filter(
         answer_text, "assets/caption_answer.txt", out_w=out_w,
-        enable_expr=f"between(t,{hook_duration},{duration})",
-        position="bottom",
+        enable_expr=f"gte(t,{answer_delay})",   # on from answer_delay to the end
+        position="bottom", palette=palette,
     )
     return f"{hook_filter},{answer_filter}"
+    
 
 def build_motion_filter(effect_name: str, duration: float, fps: int = 30) -> str:
     total_frames = max(int(duration * fps), 1)
@@ -759,14 +766,17 @@ def generate_youtube_title(fact_text: str) -> str:
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": fact_text},
                     ],
-                    "max_tokens": 150,
+                    "max_tokens": 400,   # was 150 -- still not enough margin over reasoning overhead
                     "temperature": 0.9,
                     "reasoning_effort": "low",
                 },
                 timeout=30,
             )
             res.raise_for_status()
-            title = res.json()["choices"][0]["message"]["content"].strip().strip('"')
+            choice = res.json()["choices"][0]
+            title = choice["message"]["content"].strip().strip('"')
+            if choice.get("finish_reason") == "length":
+                print(f"Warning: title generation hit the token limit (finish_reason=length): {title!r}")
             if not title:
                 raise ValueError("Groq returned an empty title")
 

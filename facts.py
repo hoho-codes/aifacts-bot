@@ -494,7 +494,7 @@ def build_two_part_caption_filter(
     answer_text: str,
     duration: float,
     out_w: int = 1080,
-    answer_delay: float = 1.5,
+    answer_delay: float = 3.0,
 ) -> str:
     """
     Hook stays visible for the whole video (top). Answer appears partway

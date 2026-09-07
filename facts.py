@@ -976,8 +976,11 @@ def main():
 
     outro_path = "assets/outro_clip.mp4"
     render_outro_clip(IMAGE_FILENAME, outro_path)
-    concat_video_with_outro(CAP_VIDEO_FILENAME, outro_path, CAP_VIDEO_FILENAME)
-
+    
+    combined_path = "assets/combined_with_outro.mp4"
+    concat_video_with_outro(CAP_VIDEO_FILENAME, outro_path, combined_path)
+    os.replace(combined_path, CAP_VIDEO_FILENAME)
+    
     mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration + 1.5)
 
     commit_video()

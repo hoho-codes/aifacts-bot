@@ -496,25 +496,32 @@ def build_two_part_caption_filter(
     answer_text: str,
     duration: float,
     out_w: int = 1080,
-    answer_delay: float = 3.0,
+    answer_delay_fraction: float = 0.15,
+    min_answer_delay: float = 1.5,
+    max_answer_delay: float = 4.0,
 ) -> str:
     """
-    Hook stays visible for the whole video (top). Answer appears partway
-    through, at answer_delay seconds, and stays until the end (bottom).
+    Hook stays visible for the entire video (top). Answer appears partway
+    through and stays until the end (bottom). Reveal timing scales with
+    the video's total duration instead of a fixed number of seconds, so
+    short and long clips both get proportionally similar pacing.
     """
-    answer_delay = min(answer_delay, max(duration - 0.3, 0))
+    answer_delay = duration * answer_delay_fraction
+    answer_delay = max(min_answer_delay, min(answer_delay, max_answer_delay))
+    answer_delay = min(answer_delay, max(duration - 0.3, 0))  # never exceed clip length
+
     palette = random.choice(CAPTION_COLOR_PALETTES)  # shared so hook/answer match
 
     hook_filter = _build_single_caption_filter(
         hook_text, "assets/caption_hook.txt", out_w=out_w,
-        enable_expr=None,
-        position="top", top_padding=280,   # was 100 -- moves it further down from the top edge
+        enable_expr=None,  # stays visible for the whole video
+        position="top", top_padding=280,
         palette=palette,
     )
     answer_filter = _build_single_caption_filter(
         answer_text, "assets/caption_answer.txt", out_w=out_w,
         enable_expr=f"gte(t,{answer_delay})",
-        position="bottom", bottom_padding=220,   # was 60 -- moves it further up from the bottom edge
+        position="bottom", bottom_padding=220,
         palette=palette,
     )
     return f"{hook_filter},{answer_filter}"

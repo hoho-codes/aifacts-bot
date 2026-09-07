@@ -320,7 +320,9 @@ def build_caption_filter(
     text: str,
     caption_file_path: str,
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    box_color: str = "black@0.15",  # was 0.55 -- much more transparent
+    box_color: str = "black@0.15",
+    out_w: int = 1080,
+    out_h: int = 1920,
 ) -> str:
     escaped = _escape_drawtext(text)
     wrapped = textwrap.fill(escaped, width=18)
@@ -341,11 +343,11 @@ def build_caption_filter(
     return (
         f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
         f"fontsize={font_size}:fontcolor=white:"
-        f"box=1:boxcolor={box_color}:boxborderw=12:"  # was 30 -- tighter padding, less box visible around text
-        f"shadowcolor=black@0.8:shadowx=2:shadowy=2:"  # add a drop shadow so text stays legible without a heavy box
-        f"x=(w-text_w)/2:y=(h-text_h)/2:line_spacing=16"
+        f"box=1:boxcolor={box_color}:boxw={out_w}:boxh=text_h+80:"
+        f"shadowcolor=black@0.8:shadowx=2:shadowy=2:"
+        f"x=(w-text_w)/2:y=h-text_h-60:line_spacing=16"
     )
-
+    
 
 def render_caption_video(
     background_path: str,
@@ -357,12 +359,12 @@ def render_caption_video(
     out_h: int = 1920,
 ) -> str:
     caption_file_path = "assets/caption.txt"
-    caption_filter = build_caption_filter(caption_text, caption_file_path)
+    caption_filter = build_caption_filter(caption_text, caption_file_path, out_w=out_w, out_h=out_h)
 
     vf = (
         f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
         f"crop={out_w}:{out_h},"
-        f"boxblur=2:1,"  # much lighter than before -- just takes the edge off, keeps image mostly sharp
+        f"boxblur=3:2,"
         f"{caption_filter},"
         f"fade=t=in:st=0:d=0.4,fade=t=out:st={max(duration - 0.4, 0)}:d=0.4"
     )

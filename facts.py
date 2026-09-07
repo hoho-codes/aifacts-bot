@@ -119,7 +119,7 @@ def polish_fact_with_groq(raw_fact: str) -> str:
         "You rewrite trivia facts into short-form video narration scripts. "
         "Expand the fact with a bit of context or a follow-up detail so it "
         "feels like a mini-explanation, not just a one-liner -- aim for "
-        "40 to 60 words, two to three sentences, spoken-language tone, "
+        "30 to 40 words, two to three sentences, spoken-language tone, "
         "no hashtags, no emojis, no quotation marks. Open with a hook. "
         "Return ONLY the rewritten script, nothing else."
     )

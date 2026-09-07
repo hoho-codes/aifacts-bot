@@ -298,8 +298,8 @@ def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
 def generate_background_image(
     fact_text: str,
     out_path: str,
-    width: int = 1024,
-    height: int = 1280,
+    width: int = 1152,
+    height: int = 1440,
 ) -> str:
     """
     Generates a background image matching the fact, via FLUX.1-schnell on

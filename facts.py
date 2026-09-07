@@ -401,51 +401,51 @@ def _escape_drawtext(text: str) -> str:
     return text
 
 
-def _wrap_text(text: str, width_chars: int = 18) -> str:
-    wrapped = textwrap.fill(text, width=width_chars)
-    return wrapped  # keep literal \n newlines here -- don't convert yet
+# def _wrap_text(text: str, width_chars: int = 18) -> str:
+#     wrapped = textwrap.fill(text, width=width_chars)
+#     return wrapped  # keep literal \n newlines here -- don't convert yet
 
 
-def build_caption_filter(
-    text: str,
-    caption_file_path: str,
-    font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    out_w: int = 1080,
-) -> str:
-    escaped = _escape_drawtext(text)
+# def build_caption_filter(
+#     text: str,
+#     caption_file_path: str,
+#     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+#     out_w: int = 1080,
+# ) -> str:
+#     escaped = _escape_drawtext(text)
 
-    word_count = len(text.split())
-    if word_count <= 15:
-        font_size = 88
-    elif word_count <= 30:
-        font_size = 68
-    elif word_count <= 50:
-        font_size = 54
-    else:
-        font_size = 44
+#     word_count = len(text.split())
+#     if word_count <= 15:
+#         font_size = 88
+#     elif word_count <= 30:
+#         font_size = 68
+#     elif word_count <= 50:
+#         font_size = 54
+#     else:
+#         font_size = 44
 
-    avg_char_width_px = font_size * 0.58
-    usable_width_px = out_w - 80
-    wrap_width_chars = max(int(usable_width_px / avg_char_width_px), 8)
+#     avg_char_width_px = font_size * 0.58
+#     usable_width_px = out_w - 80
+#     wrap_width_chars = max(int(usable_width_px / avg_char_width_px), 8)
 
-    wrapped = textwrap.fill(escaped, width=wrap_width_chars)
-    num_lines = wrapped.count("\n") + 1
+#     wrapped = textwrap.fill(escaped, width=wrap_width_chars)
+#     num_lines = wrapped.count("\n") + 1
 
-    with open(caption_file_path, "w", encoding="utf-8") as f:
-        f.write(wrapped)
+#     with open(caption_file_path, "w", encoding="utf-8") as f:
+#         f.write(wrapped)
 
-    line_spacing = 16
-    bottom_padding = 60
+#     line_spacing = 16
+#     bottom_padding = 60
 
-    palette = random.choice(CAPTION_COLOR_PALETTES)
+#     palette = random.choice(CAPTION_COLOR_PALETTES)
 
-    return (
-        f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
-        f"fontsize={font_size}:fontcolor={palette['fontcolor']}:"
-        f"borderw=3:bordercolor={palette['bordercolor']}:"
-        f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
-        f"x=(w-text_w)/2:y=h-text_h-{bottom_padding}:line_spacing={line_spacing}"
-    )
+#     return (
+#         f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
+#         f"fontsize={font_size}:fontcolor={palette['fontcolor']}:"
+#         f"borderw=3:bordercolor={palette['bordercolor']}:"
+#         f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
+#         f"x=(w-text_w)/2:y=h-text_h-{bottom_padding}:line_spacing={line_spacing}"
+#     )
 
 def _build_single_caption_filter(
     text: str,

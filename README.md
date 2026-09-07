@@ -6,7 +6,7 @@ motion + burned-in captions + music (ffmpeg) → generates a title/description
 (Groq) → uploads to YouTube Shorts. Runs via GitHub Actions, ~$0/month.
 
 ## Requirements
-pip install requests huggingface_hub edge-tts
+`pip install requests huggingface_hub edge-tts`
 
 `ffmpeg`/`ffprobe` installed explicitly in the workflow.
 

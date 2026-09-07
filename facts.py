@@ -44,13 +44,22 @@ FALLBACK_FACTS = [
     "Wombat poop is cube-shaped.",
 ]
 
+# IMAGE_STYLE_MODIFIERS = [
+#     "warm cinematic photography style",
+#     "soft editorial illustration style",
+#     "clean minimalist digital art style",
+#     "vintage textbook illustration style",
+#     "moody atmospheric photography",
+#     "bright flat-design vector illustration",
+# ]
+
 IMAGE_STYLE_MODIFIERS = [
-    "warm cinematic photography style",
-    "soft editorial illustration style",
-    "clean minimalist digital art style",
-    "vintage textbook illustration style",
-    "moody atmospheric photography",
-    "bright flat-design vector illustration",
+    "hyper-realistic photography, 8k, sharp focus, natural lighting",
+    "cinematic realistic photography, shallow depth of field, dramatic lighting",
+    "photorealistic macro photography, extreme detail, professional lighting",
+    "realistic documentary-style photography, natural color grading",
+    "hyper-detailed realistic photo, studio lighting, high dynamic range",
+    "moody atmospheric realistic photography, volumetric light",
 ]
 
 
@@ -62,6 +71,12 @@ EFFECTS_WEIGHTED = [
     ("color_drift", 15),
 ]
 
+CAPTION_COLOR_PALETTES = [
+    {"fontcolor": "0xFFF8E7", "bordercolor": "0x1A1A1A@0.85"},  # warm cream / near-black
+    {"fontcolor": "0xFFFFFF", "bordercolor": "0x0D1B2A@0.85"},  # white / deep navy
+    {"fontcolor": "0xFFE8D6", "bordercolor": "0x2B1B17@0.85"},  # peach / espresso brown
+    {"fontcolor": "0xF5F5F5", "bordercolor": "0x111111@0.9"},   # soft white / black
+]
 
 def weighted_choice(pairs):
     items, weights = zip(*pairs)
@@ -170,12 +185,14 @@ def build_image_prompt_with_groq(fact_text: str) -> str:
 
     system_instruction = (
         "You turn trivia facts into short, concrete prompts for an AI image "
-        "generator. Describe a single clear visual scene that represents the "
-        "fact -- no text, no words, no diagrams, just a real scene or object. "
+        "generator. Describe a single clear, photorealistic scene that represents "
+        "the fact -- as if shot by a professional photographer, not illustrated "
+        "or stylized. No text, no words, no diagrams, just a real scene or object "
+        "with realistic lighting, texture, and detail. "
         f"Render it in this style: {style}. "
         "Compose the scene vertically, with the subject centered and filling "
-        "the frame. The final image must be a full-bleed photo or illustration "
-        "with no borders, frames, white margins, or visible photo-paper edges. "
+        "the frame. The final image must be a full-bleed photo with no borders, "
+        "frames, white margins, or visible photo-paper edges. "
         "Under 25 words total. Return ONLY the prompt text, nothing else."
     )
 
@@ -359,14 +376,15 @@ def build_caption_filter(
     line_spacing = 16
     bottom_padding = 60
 
+    palette = random.choice(CAPTION_COLOR_PALETTES)
+
     return (
         f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
-        f"fontsize={font_size}:fontcolor=white:"
-        f"borderw=3:bordercolor=black@0.8:"
+        f"fontsize={font_size}:fontcolor={palette['fontcolor']}:"
+        f"borderw=3:bordercolor={palette['bordercolor']}:"
         f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
         f"x=(w-text_w)/2:y=h-text_h-{bottom_padding}:line_spacing={line_spacing}"
     )
-
 
 def build_motion_filter(effect_name: str, duration: float, fps: int = 30) -> str:
     total_frames = max(int(duration * fps), 1)

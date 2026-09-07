@@ -64,11 +64,10 @@ IMAGE_STYLE_MODIFIERS = [
 
 
 EFFECTS_WEIGHTED = [
-    ("zoompan_in", 25),
-    ("zoompan_out", 20),
-    ("pan_horizontal", 20),
-    ("breathing_zoom", 20),
-    ("color_drift", 15),
+    ("zoompan_in", 31.25),
+    ("zoompan_out", 25),
+    ("pan_horizontal", 25),,
+    ("color_drift", 18.75),
 ]
 
 CAPTION_COLOR_PALETTES = [

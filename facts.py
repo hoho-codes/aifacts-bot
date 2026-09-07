@@ -636,7 +636,7 @@ def generate_youtube_title(fact_text: str) -> str:
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": fact_text},
                     ],
-                    "max_tokens": 60,
+                    "max_tokens": 150,
                     "temperature": 0.9,
                     "reasoning_effort": "low",
                 },

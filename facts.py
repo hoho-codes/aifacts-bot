@@ -1,13 +1,10 @@
 """
 facts.py
 
-Standalone helpers for a "random facts" video pipeline: fetch a raw fact,
-polish it with Groq into a punchy short-form script, generate a matching
-background image via Hugging Face's FLUX, synthesize narration via
-edge-tts (free, no API key), and burn in centered captions via ffmpeg's
-drawtext filter. Kept separate from coffee.py since this is a distinct
-content pipeline that happens to share infrastructure patterns (ffmpeg,
-retries, fallbacks) rather than code.
+A "random facts" video pipeline: fetch a raw fact, polish it with Groq 
+into a punchy short-form script, generate a matching background image 
+via Hugging Face's FLUX, synthesize narration via edge-tts (free, no 
+API key), and burn in captions via ffmpeg's drawtext filter.
 
 Requires: pip install edge-tts requests huggingface_hub pillow
 ffmpeg must be available on PATH (already true on ubuntu-latest runners).

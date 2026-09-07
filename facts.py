@@ -9,7 +9,7 @@ drawtext filter. Kept separate from coffee.py since this is a distinct
 content pipeline that happens to share infrastructure patterns (ffmpeg,
 retries, fallbacks) rather than code.
 
-Requires: pip install edge-tts requests huggingface_hub
+Requires: pip install edge-tts requests huggingface_hub pillow
 ffmpeg must be available on PATH (already true on ubuntu-latest runners).
 """
 

@@ -554,16 +554,13 @@ def render_caption_video(
     fps: int = 30,
     out_w: int = 1080,
     out_h: int = 1920,
-) -> str:
-    caption_filter = build_two_part_caption_filter(hook_text, answer_text, duration, out_w=out_w)
+) -> tuple[str, dict]:
+    caption_filter, palette = build_two_part_caption_filter(hook_text, answer_text, duration, out_w=out_w)
 
     effect = weighted_choice(EFFECTS_WEIGHTED)
     print(f"Selected motion effect: {effect}")
     motion_filter = build_motion_filter(effect, duration, fps)
 
-    # pan_horizontal needs extra source width to pan across, since it
-    # doesn't zoom -- give it a wider scale than the other zoompan-based
-    # effects, which only need to fill the frame before zooming in.
     if effect == "pan_horizontal":
         scale_crop = f"scale=1600:1920:force_original_aspect_ratio=increase"
     else:
@@ -591,23 +588,27 @@ def render_caption_video(
         raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
 
     print(f"Caption video rendered at {output_path} with effect '{effect}'")
-    return output_path
+    return output_path, palette
 
 
 def build_outro_filter(
     text: str = "Subscribe for More",
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     out_w: int = 1080,
+    palette: dict = None,
 ) -> str:
     """
     Simple centered outro text filter -- large, bold, high-contrast,
     no fancy styling since it only needs to read clearly for ~1.5s.
+    Uses the same color palette as the captions if provided, for
+    visual consistency across the whole video.
     """
+    palette = palette or random.choice(CAPTION_COLOR_PALETTES)
     escaped = _escape_drawtext(text)
     return (
         f"drawtext=fontfile={font_path}:text='{escaped}':"
-        f"fontsize=76:fontcolor=white:"
-        f"borderw=4:bordercolor=black@0.9:"
+        f"fontsize=76:fontcolor={palette['fontcolor']}:"
+        f"borderw=4:bordercolor={palette['bordercolor']}:"
         f"text_align=C:"
         f"x=(w-text_w)/2:y=(h-text_h)/2"
     )
@@ -620,18 +621,14 @@ def render_outro_clip(
     fps: int = 30,
     out_w: int = 1080,
     out_h: int = 1920,
+    palette: dict = None,
 ) -> str:
-    """
-    Renders a short freeze-frame outro: the same background image, held
-    still, with "Subscribe for More" burned in. Appended after the main
-    video via concat so the video ends on a clear call-to-action.
-    """
-    outro_filter = build_outro_filter(out_w=out_w)
+    outro_filter = build_outro_filter(out_w=out_w, palette=palette)
 
     vf = (
         f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
         f"crop={out_w}:{out_h},"
-        f"boxblur=8:4,"  # heavier blur than the main video -- outro is text-first, image is just backdrop
+        f"boxblur=8:4,"
         f"{outro_filter},"
         f"fade=t=in:st=0:d=0.3"
     )
@@ -651,7 +648,7 @@ def render_outro_clip(
 
     print(f"Outro clip rendered at {output_path}")
     return output_path
-
+    
 
 def concat_video_with_outro(main_video_path: str, outro_path: str, output_path: str) -> str:
     """
@@ -965,15 +962,15 @@ def main():
     generate_background_image(fact, IMAGE_FILENAME)
     narration_path = generate_narration(fact, AUDIO_FILENAME)
     duration = get_audio_duration(narration_path)
-    render_caption_video(IMAGE_FILENAME, hook, answer, CAP_VIDEO_FILENAME, duration)
+    _, palette = render_caption_video(IMAGE_FILENAME, hook, answer, CAP_VIDEO_FILENAME, duration)
 
     outro_path = "assets/outro_clip.mp4"
-    render_outro_clip(IMAGE_FILENAME, outro_path)
-    
+    render_outro_clip(IMAGE_FILENAME, outro_path, palette=palette)
+
     combined_path = "assets/combined_with_outro.mp4"
     concat_video_with_outro(CAP_VIDEO_FILENAME, outro_path, combined_path)
     os.replace(combined_path, CAP_VIDEO_FILENAME)
-    
+
     mux_narration_with_video(CAP_VIDEO_FILENAME, narration_path, VIDEO_FILENAME, duration + 1.5)
 
     commit_video()

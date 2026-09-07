@@ -505,13 +505,15 @@ def build_two_part_caption_filter(
 
     hook_filter = _build_single_caption_filter(
         hook_text, "assets/caption_hook.txt", out_w=out_w,
-        enable_expr=None,   # no enable clause -> visible for the entire clip
-        position="top", palette=palette,
+        enable_expr=None,
+        position="top", top_padding=280,   # was 100 -- moves it further down from the top edge
+        palette=palette,
     )
     answer_filter = _build_single_caption_filter(
         answer_text, "assets/caption_answer.txt", out_w=out_w,
-        enable_expr=f"gte(t,{answer_delay})",   # on from answer_delay to the end
-        position="bottom", palette=palette,
+        enable_expr=f"gte(t,{answer_delay})",
+        position="bottom", bottom_padding=220,   # was 60 -- moves it further up from the bottom edge
+        palette=palette,
     )
     return f"{hook_filter},{answer_filter}"
     

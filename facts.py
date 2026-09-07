@@ -33,6 +33,8 @@ AUDIO_FILENAME = "assets/generated_audio.mp3"
 CAP_VIDEO_FILENAME = "assets/captioned_video.mp4"
 VIDEO_FILENAME = "assets/generated_video.mp4"
 
+YT_TITLE_MAX_LEN = 100  # YouTube's hard limit on video titles
+SHORTS_TAG = " #Shorts"
 
 FALLBACK_FACTS = [
     "Honey never spoils. Archaeologists have found 3,000-year-old honey in Egyptian tombs that's still edible.",
@@ -572,6 +574,132 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
         return None
 
 
+# ---------------------------------------------------------------------------
+# YouTube title & description generation via Groq
+# ---------------------------------------------------------------------------
+
+def generate_youtube_title(fact_text: str) -> str:
+    """
+    Generates a punchy, clickable YouTube title from the fact script,
+    then appends ' #Shorts'. The Groq instruction reserves room for the
+    tag up front so the combined result respects YouTube's 100-char
+    title limit; a hard truncation afterward is a final safety net in
+    case Groq ignores the length instruction.
+    """
+    reserved = len(SHORTS_TAG)
+    max_title_len = YT_TITLE_MAX_LEN - reserved
+
+    if not GROQ_API_KEY:
+        print("No GROQ_API_KEY set; using a truncated fact as title.")
+        base_title = fact_text[:max_title_len].rstrip()
+        return base_title + SHORTS_TAG
+
+    system_instruction = (
+        "You write short, clickable YouTube titles for a trivia facts "
+        "channel. Given a fact script, write ONE punchy title that hooks "
+        "curiosity without giving the whole fact away. "
+        f"HARD LIMIT: {max_title_len} characters, no exceptions. "
+        "No hashtags, no emojis, no quotation marks. "
+        "Return ONLY the title text, nothing else."
+    )
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-oss-20b",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": fact_text},
+                    ],
+                    "max_tokens": 60,
+                    "temperature": 0.9,
+                    "reasoning_effort": "low",
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            title = res.json()["choices"][0]["message"]["content"].strip().strip('"')
+            if not title:
+                raise ValueError("Groq returned an empty title")
+
+            # Hard safety net regardless of what Groq actually returned
+            title = title[:max_title_len].rstrip()
+            final_title = title + SHORTS_TAG
+            print(f"Generated title: {final_title}")
+            return final_title
+        except Exception as e:
+            last_err = e
+            print(f"generate_youtube_title attempt {attempt + 1} failed ({e}); retrying...")
+
+    print(f"Groq title generation failed after retries ({last_err}); using fallback title.")
+    base_title = fact_text[:max_title_len].rstrip()
+    return base_title + SHORTS_TAG
+
+
+def generate_youtube_description(fact_text: str) -> str:
+    """
+    Generates a nicely formatted, multi-line YouTube description from the
+    fact script -- a short expansion plus relevant hashtags, rather than
+    just reusing the narration text verbatim. Falls back to the raw fact
+    plus a fixed hashtag block if Groq fails.
+    """
+    fallback_description = f"{fact_text}\n\n#facts #shorts #didyouknow"
+
+    if not GROQ_API_KEY:
+        print("No GROQ_API_KEY set; using fallback description.")
+        return fallback_description
+
+    system_instruction = (
+        "You write YouTube Shorts descriptions for a trivia facts channel. "
+        "Given a fact script, write a short, well-formatted description: "
+        "one or two sentences expanding slightly on the fact, then a blank "
+        "line, then 4-6 relevant hashtags on their own line. "
+        "No emojis in the hashtags. Keep the whole thing under 400 characters. "
+        "Return ONLY the description text, nothing else."
+    )
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-oss-20b",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": fact_text},
+                    ],
+                    "max_tokens": 200,
+                    "temperature": 0.9,
+                    "reasoning_effort": "low",
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            description = res.json()["choices"][0]["message"]["content"].strip().strip('"')
+            if not description:
+                raise ValueError("Groq returned an empty description")
+            print(f"Generated description: {description}")
+            return description
+        except Exception as e:
+            last_err = e
+            print(f"generate_youtube_description attempt {attempt + 1} failed ({e}); retrying...")
+
+    print(f"Groq description generation failed after retries ({last_err}); using fallback description.")
+    return fallback_description
+
+
 def commit_video():
     """
     Commits and pushes the final video to the repo, same pattern as
@@ -604,8 +732,9 @@ def main():
 
     commit_video()
 
-    # title = fact[:95] + " #Shorts"
-    # description = f"{fact}\n\n#facts #shorts #didyouknow"
+    title = generate_youtube_title(fact)
+    description = generate_youtube_description(fact)
+
     # res = publish_to_youtube(VIDEO_FILENAME, title, description, tags=["facts", "shorts", "didyouknow"])
 
     # if res is not None and res.ok:

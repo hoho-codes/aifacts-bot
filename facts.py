@@ -317,46 +317,49 @@ def build_caption_filter(
     text: str,
     caption_file_path: str,
     font_path: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    box_color: str = "black@0.15",
+    out_w: int = 1080,
 ) -> str:
     escaped = _escape_drawtext(text)
-    wrapped = textwrap.fill(escaped, width=18)
-    num_lines = wrapped.count("\n") + 1
 
-    if num_lines <= 3:
+    # Pick a font size based on total text length first, then compute a
+    # wrap width in characters that makes each line come close to
+    # spanning the full frame width at that font size -- rather than a
+    # fixed character count that was only right for one specific size.
+    word_count = len(text.split())
+    if word_count <= 15:
         font_size = 72
-    elif num_lines <= 5:
+    elif word_count <= 30:
         font_size = 56
-    elif num_lines <= 7:
+    elif word_count <= 50:
         font_size = 44
     else:
         font_size = 36
+
+    # DejaVu Sans Bold at a given pixel size averages roughly
+    # 0.58 * font_size px per character. Dividing the frame width by
+    # that gives a character count that fills close to the full width
+    # before wrapping to the next line, with a small margin so text
+    # doesn't touch the screen edges.
+    avg_char_width_px = font_size * 0.58
+    usable_width_px = out_w - 80  # leave ~40px margin on each side
+    wrap_width_chars = max(int(usable_width_px / avg_char_width_px), 8)
+
+    wrapped = textwrap.fill(escaped, width=wrap_width_chars)
+    num_lines = wrapped.count("\n") + 1
 
     with open(caption_file_path, "w", encoding="utf-8") as f:
         f.write(wrapped)
 
     line_spacing = 16
-    est_text_height = (font_size * num_lines) + (line_spacing * (num_lines - 1))
-    box_padding = 60
-    bar_height = est_text_height + box_padding
+    bottom_padding = 60
 
-    # DEBUG: bump this to black@0.9 temporarily to visually confirm
-    # the bar spans full width before reverting to the subtle 0.15
-    debug_box_color = box_color
-
-    drawbox_filter = (
-        f"drawbox=x=0:y=ih-{bar_height}:w=iw:h={bar_height}:"
-        f"color={debug_box_color}:t=fill"
-    )
-
-    drawtext_filter = (
+    return (
         f"drawtext=fontfile={font_path}:textfile={caption_file_path}:"
         f"fontsize={font_size}:fontcolor=white:"
-        f"shadowcolor=black@0.8:shadowx=2:shadowy=2:"
-        f"x=(w-text_w)/2:y=h-text_h-{box_padding // 2}:line_spacing={line_spacing}"
+        f"borderw=3:bordercolor=black@0.8:"
+        f"shadowcolor=black@0.9:shadowx=3:shadowy=3:"
+        f"x=(w-text_w)/2:y=h-text_h-{bottom_padding}:line_spacing={line_spacing}"
     )
-
-    return f"{drawbox_filter},{drawtext_filter}"
     
 
 def render_caption_video(
@@ -369,7 +372,7 @@ def render_caption_video(
     out_h: int = 1920,
 ) -> str:
     caption_file_path = "assets/caption.txt"
-    caption_filter = build_caption_filter(caption_text, caption_file_path)
+    caption_filter = build_caption_filter(caption_text, caption_file_path, out_w=out_w)
 
     vf = (
         f"scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"

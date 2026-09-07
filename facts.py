@@ -735,13 +735,13 @@ def main():
     title = generate_youtube_title(fact)
     description = generate_youtube_description(fact)
 
-    # res = publish_to_youtube(VIDEO_FILENAME, title, description, tags=["facts", "shorts", "didyouknow"])
+    res = publish_to_youtube(VIDEO_FILENAME, title, description, tags=["facts", "shorts", "didyouknow"])
 
-    # if res is not None and res.ok:
-    #     print(f"Uploaded Short: {res.json().get('id')}")
-    # else:
-    #     print("YouTube upload failed; see error above.")
-    #     raise SystemExit(1)
+    if res is not None and res.ok:
+        print(f"Uploaded Short: {res.json().get('id')}")
+    else:
+        print("YouTube upload failed; see error above.")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

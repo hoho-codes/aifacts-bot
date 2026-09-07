@@ -683,8 +683,8 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
             "snippet": {
                 "title": title[:100],
                 "description": description,
-                "tags": tags or ["coffee", "cafe", "shorts"],
-                "categoryId": "22",
+                "tags": tags or ["facts", "shorts", "didyouknow"],
+                "categoryId": "27",
             },
             "status": {
                 "privacyStatus": YT_PRIVACY_STATUS,

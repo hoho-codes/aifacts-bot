@@ -721,7 +721,6 @@ def mux_narration_with_video(
         else:
             print(f"Track failed ({music_path}), trying next if available:\n{result.stderr[-500:]}")
 
-    # No music files, or all failed -- fall back to narration-only audio
     print("No usable music track found — muxing narration only, no music.")
     cmd = [
         "ffmpeg", "-y",
@@ -742,6 +741,7 @@ def mux_narration_with_video(
 
     print(f"Final narrated video created at {output_path} (no music)")
     return output_path
+    
 
 def yt_refresh_access_token() -> str:
     res = requests.post(

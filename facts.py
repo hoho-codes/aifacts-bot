@@ -76,6 +76,13 @@ CAPTION_COLOR_PALETTES = [
     {"fontcolor": "0xFF2E63", "bordercolor": "0x1A0010@0.9"},   # hot pink / near-black
     {"fontcolor": "0x39FF14", "bordercolor": "0x0A1A00@0.9"},   # neon green / dark
     {"fontcolor": "0xFFFFFF", "bordercolor": "0xFF6B00@0.9"},   # white text / bold orange border
+    {"fontcolor": "0xFF9F1C", "bordercolor": "0x1A0F00@0.9"},   # vivid orange / near-black
+    {"fontcolor": "0xB026FF", "bordercolor": "0x0F001A@0.9"},   # electric purple / near-black
+    {"fontcolor": "0x00FFC2", "bordercolor": "0x001A15@0.9"},   # aqua/teal / dark teal
+    {"fontcolor": "0xFF3131", "bordercolor": "0x1A0000@0.9"},   # bold red / near-black
+    {"fontcolor": "0xFFFFFF", "bordercolor": "0x2E1A47@0.9"},   # white text / deep violet border
+    {"fontcolor": "0xFDF200", "bordercolor": "0xFF00A0@0.9"},   # lemon yellow / hot magenta border
+    {"fontcolor": "0x7CFC00", "bordercolor": "0x0A1A00@0.9"},   # lawn green / dark
 ]
 
 def weighted_choice(pairs):

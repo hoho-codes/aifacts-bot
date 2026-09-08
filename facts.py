@@ -123,11 +123,17 @@ def polish_fact_with_groq(raw_fact: str) -> str:
         return raw_fact
 
     system_instruction = (
-        "You rewrite trivia facts into short-form video narration scripts. "
-        "Expand the fact with a bit of context or a follow-up detail so it "
-        "feels like a mini-explanation, not just a one-liner -- aim for "
-        "30 to 40 words, two to three sentences, spoken-language tone, "
-        "no hashtags, no emojis, no quotation marks. Open with a hook. "
+        "You rewrite trivia facts into short-form video narration scripts "
+        "for a channel built on surprising, disbelief-inducing facts -- not "
+        "dry trivia. Reframe the fact to emphasize what's counterintuitive, "
+        "shocking, or contrary to common assumption, rather than stating it "
+        "neutrally. If the fact has an angle involving danger, money, the "
+        "human body, crime, or a common misconception, lead with that angle. "
+        "Open the script with a hook that creates genuine doubt or surprise "
+        "('You'd never guess...', 'Most people have no idea...', 'This "
+        "sounds made up, but...') rather than a plain statement of the fact. "
+        "Aim for 30 to 40 words, two to three sentences, spoken-language "
+        "tone, no hashtags, no emojis, no quotation marks. "
         "Return ONLY the rewritten script, nothing else."
     )
 
@@ -241,11 +247,17 @@ def build_image_prompt_with_groq(fact_text: str) -> str:
 def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
     """
     Generates a short two-part on-screen caption from the fact: a hook line
-    ("Did You Know?!") and a punchy answer line (a few words, not the full
-    narration). Used only for the burned-in caption -- narration still uses
-    the full polished fact_text from get_fact_script().
+    (phrased as a direct, provocative question rather than a generic
+    "Did You Know?!") and a punchy answer line. Used only for the
+    burned-in caption -- narration still uses the full polished
+    fact_text from get_fact_script().
     """
-    fallback_hook = random.choice(["Did You Know?!", "Wait, What?!", "Bet You Didn't Know"])
+    fallback_hook = random.choice([
+        "Wait, WHAT?!",
+        "You've Been Wrong",
+        "Nobody Knows This",
+        "This Sounds Fake",
+    ])
     fallback_answer = textwrap.shorten(fact_text.split(".")[0], width=60, placeholder="...")
 
     if not GROQ_API_KEY:
@@ -253,12 +265,19 @@ def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
         return fallback_hook, fallback_answer
 
     system_instruction = (
-        "You write short on-screen captions for a trivia Shorts video. "
-        "Given a fact script, return TWO lines separated by '|||': "
-        "the first is a short catchy hook (3-5 words, e.g. 'Did You Know?!' "
-        "or a variation), the second is the punchiest single detail from the "
-        "fact rewritten as a short, catchy phrase (under 8 words, no full "
-        "sentence needed). No hashtags, no emojis, no quotation marks. "
+        "You write short on-screen captions for a viral trivia Shorts video. "
+        "Given a fact script, return TWO lines separated by '|||':\n"
+        "The first is a short, provocative HOOK (4-7 words) that creates "
+        "genuine disbelief or curiosity -- phrase it as a direct question "
+        "the viewer needs answered, or a bold claim that sounds almost "
+        "unbelievable. Avoid generic openers like 'Did You Know' -- instead "
+        "use patterns like 'Which everyday thing actually...', 'You've been "
+        "wrong about...', 'This is banned in...', 'Nobody tells you this "
+        "about...'. Make it specific to THIS fact, not generic.\n"
+        "The second is the punchiest single detail from the fact, rewritten "
+        "as a short, catchy phrase (under 8 words, no full sentence needed) "
+        "that delivers the payoff.\n"
+        "No hashtags, no emojis, no quotation marks. "
         "Return ONLY 'hook|||answer', nothing else."
     )
 
@@ -831,8 +850,11 @@ def generate_youtube_title(fact_text: str) -> str:
 
     system_instruction = (
         "You write short, clickable YouTube titles for a trivia facts "
-        "channel. Given a fact script, write ONE punchy title that hooks "
-        "curiosity without giving the whole fact away. "
+        "channel built on disbelief and surprise. Given a fact script, write "
+        "ONE punchy title using patterns like 'You've Been Wrong About...', "
+        "'Nobody Tells You This About...', 'The Reason [X] Will Shock You', "
+        "or a direct provocative question. Avoid neutral, generic phrasing -- "
+        "make the viewer need to know the answer. "
         f"HARD LIMIT: {max_title_len} characters, no exceptions. "
         "No hashtags, no emojis, no quotation marks. "
         "Return ONLY the title text, nothing else."

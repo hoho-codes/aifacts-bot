@@ -113,6 +113,126 @@ def fetch_random_fact() -> str:
     return random.choice(FALLBACK_FACTS)
 
 
+def fetch_random_facts(n: int = 5) -> list[str]:
+    """
+    Fetches n raw facts from the uselessfacts API (one request per fact --
+    the API has no bulk endpoint). Each slot gets its own 3-attempt retry
+    loop, same pattern as fetch_random_fact(), and skips duplicates so the
+    batch given to Groq is actually n distinct options. If too few facts
+    come back, tops up with FALLBACK_FACTS so selection still has enough
+    to choose from.
+    """
+    facts = []
+    seen = set()
+
+    for i in range(n):
+        last_err = None
+        for attempt in range(3):
+            try:
+                res = requests.get(FACTS_API_URL, timeout=15)
+                res.raise_for_status()
+                data = res.json()
+                fact = data.get("text", "").strip()
+                if not fact:
+                    raise ValueError("Empty fact text in response")
+                if fact in seen:
+                    raise ValueError("Duplicate fact, retrying for a fresh one")
+                seen.add(fact)
+                facts.append(fact)
+                print(f"Fetched candidate {i + 1}/{n}: {fact}")
+                break
+            except Exception as e:
+                last_err = e
+                print(f"fetch_random_facts candidate {i + 1} attempt {attempt + 1} failed ({e}); retrying...")
+        else:
+            print(f"Failed to fetch candidate {i + 1}/{n} after retries ({last_err}); skipping.")
+
+    if len(facts) < 2:
+        print("Too few candidates fetched; topping up with fallback facts.")
+        for f in FALLBACK_FACTS:
+            if f not in seen:
+                facts.append(f)
+                seen.add(f)
+            if len(facts) >= max(n, 2):
+                break
+
+    return facts
+
+
+def pick_best_fact_with_groq(facts: list[str]) -> str:
+    """
+    Given a batch of raw candidate facts, asks Groq to pick the single
+    most surprising / disbelief-inducing one to build this video around --
+    same "surprising over dry trivia" framing as polish_fact_with_groq's
+    system instruction, but used here as a selection step over several
+    options rather than a rewrite of one. Falls back to random.choice
+    if Groq is unavailable or its reply can't be parsed into a valid index.
+    """
+    if len(facts) <= 1:
+        return facts[0] if facts else random.choice(FALLBACK_FACTS)
+
+    if not GROQ_API_KEY:
+        print("No GROQ_API_KEY set; picking a random candidate instead of ranking.")
+        return random.choice(facts)
+
+    numbered = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(facts))
+
+    system_instruction = (
+        "You are choosing which trivia fact to turn into a short-form video "
+        "for a channel built on surprising, disbelief-inducing facts -- not "
+        "dry trivia. You will be given a numbered list of candidate facts. "
+        "Pick the ONE most surprising, counterintuitive, or shocking fact -- "
+        "the one that would make someone stop scrolling and think 'wait, "
+        "really?'. Favor facts with an angle involving danger, money, the "
+        "human body, crime, or a common misconception over facts that are "
+        "merely mildly interesting. "
+        "Return ONLY the number of your chosen fact, nothing else."
+    )
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "openai/gpt-oss-20b",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": numbered},
+                    ],
+                    "max_tokens": 300,  # generous margin -- reasoning overhead eats the budget before the number comes out, same lesson as generate_youtube_title
+                    "temperature": 0.7,
+                    "reasoning_effort": "low",
+                },
+                timeout=30,
+            )
+            res.raise_for_status()
+            choice = res.json()["choices"][0]
+            raw = choice["message"]["content"].strip()
+            if choice.get("finish_reason") == "length":
+                print(f"Warning: fact-selection hit the token limit (finish_reason=length): {raw!r}")
+
+            digits = "".join(ch for ch in raw if ch.isdigit())
+            if not digits:
+                raise ValueError(f"No number found in Groq response: {raw!r}")
+            choice_idx = int(digits) - 1
+            if not (0 <= choice_idx < len(facts)):
+                raise ValueError(f"Groq picked an out-of-range index: {raw!r}")
+
+            chosen = facts[choice_idx]
+            print(f"Groq picked candidate #{choice_idx + 1}: {chosen}")
+            return chosen
+        except Exception as e:
+            last_err = e
+            print(f"pick_best_fact_with_groq attempt {attempt + 1} failed ({e}); retrying...")
+
+    print(f"Groq fact selection failed after retries ({last_err}); picking a random candidate instead.")
+    return random.choice(facts)
+
 # ---------------------------------------------------------------------------
 # 2. Polish the raw fact into a punchy short-form script via Groq
 # ---------------------------------------------------------------------------
@@ -172,11 +292,19 @@ def polish_fact_with_groq(raw_fact: str) -> str:
     return raw_fact
 
 
-def get_fact_script() -> str:
-    """Convenience wrapper: fetch a raw fact, then polish it."""
-    raw_fact = fetch_random_fact()
-    return polish_fact_with_groq(raw_fact)
+# def get_fact_script() -> str:
+#     """Convenience wrapper: fetch a raw fact, then polish it."""
+#     raw_fact = fetch_random_fact()
+#     return polish_fact_with_groq(raw_fact)
 
+def get_fact_script(n_candidates: int = 5) -> str:
+    """
+    Convenience wrapper: fetch n candidate facts, let Groq pick the
+    most surprising one, then polish it into narration.
+    """
+    candidates = fetch_random_facts(n_candidates)
+    best_fact = pick_best_fact_with_groq(candidates)
+    return polish_fact_with_groq(best_fact)
 
 # ---------------------------------------------------------------------------
 # 3. Generate a background image matching the fact via Groq + FLUX

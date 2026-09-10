@@ -1,8 +1,8 @@
 name: Daily Fact Short
 
 on:
-  schedule:
-    - cron: "0 15 * * *"   # 15:00 UTC daily — adjust to your preferred time, offset from the coffee bot's schedule
+  #schedule:
+  #  - cron: "0 15 * * *"   # 15:00 UTC daily — adjust to your preferred time, offset from the coffee bot's schedule
   workflow_dispatch: {}      # allows manual runs from the Actions tab for testing
 
 permissions:

@@ -919,6 +919,7 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
             "status": {
                 "privacyStatus": YT_PRIVACY_STATUS,
                 "selfDeclaredMadeForKids": False,
+                "containsSyntheticMedia": true,
             },
         }
 

@@ -22,6 +22,7 @@ FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
 YT_CLIENT_ID = os.environ["YT_CLIENT_ID"]
 YT_CLIENT_SECRET = os.environ["YT_CLIENT_SECRET"]
@@ -372,6 +373,99 @@ def build_image_prompt_with_groq(fact_text: str) -> str:
     return f"A simple illustration representing: {fact_text}. {style}."
 
 
+def build_pexels_query_with_groq(fact_text: str) -> str:
+    """
+    Turns the fact into a short, concrete search query suitable for a
+    stock photo search (Pexels) -- different from build_image_prompt_with_groq,
+    since a search query needs to match real photographed subjects/scenes
+    that actually exist in a stock library, not an imagined AI scene.
+    Falls back to a naive keyword extraction if Groq is unavailable.
+    """
+    if not GROQ_API_KEY:
+        # crude fallback: just use the first few words as a search term
+        words = fact_text.split()[:4]
+        return " ".join(words)
+
+    system_instruction = (
+        "Turn this trivia fact into a short stock-photo search query (2-4 "
+        "words) describing a concrete, photographable subject or scene "
+        "that a real stock photo library would likely have -- e.g. "
+        "'octopus underwater', 'stack of coins', 'x-ray hand'. "
+        "No abstract concepts, no text-in-image ideas. "
+        "Return ONLY the search query, nothing else."
+    )
+
+    try:
+        res = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "openai/gpt-oss-20b",
+                "messages": [
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": fact_text},
+                ],
+                "max_tokens": 100,
+                "temperature": 0.7,
+                "reasoning_effort": "low",
+            },
+            timeout=30,
+        )
+        res.raise_for_status()
+        query = res.json()["choices"][0]["message"]["content"].strip().strip('"')
+        if query:
+            print(f"Pexels search query: {query}")
+            return query
+    except Exception as e:
+        print(f"build_pexels_query_with_groq failed ({e}); using naive fallback query.")
+
+    words = fact_text.split()[:4]
+    return " ".join(words)
+
+
+def fetch_pexels_image(fact_text: str, out_path: str) -> str:
+    """
+    Fallback background image source: searches Pexels' free stock photo
+    API and downloads the top result's portrait-oriented image. Used only
+    when FLUX generation fails entirely, so the pipeline still has a
+    usable (real, non-AI) background rather than failing the whole run.
+    Requires a free PEXELS_API_KEY from pexels.com/api.
+    """
+    if not PEXELS_API_KEY:
+        raise RuntimeError("No PEXELS_API_KEY set; cannot use Pexels fallback.")
+
+    query = build_pexels_query_with_groq(fact_text)
+
+    res = requests.get(
+        "https://api.pexels.com/v1/search",
+        headers={"Authorization": PEXELS_API_KEY},
+        params={"query": query, "per_page": 5, "orientation": "portrait"},
+        timeout=15,
+    )
+    res.raise_for_status()
+    data = res.json()
+
+    photos = data.get("photos", [])
+    if not photos:
+        raise RuntimeError(f"No Pexels results for query: {query!r}")
+
+    photo = random.choice(photos)
+    # 'portrait' size is pre-cropped to a vertical aspect ratio by Pexels
+    image_url = photo["src"]["portrait"]
+
+    img_res = requests.get(image_url, timeout=30)
+    img_res.raise_for_status()
+    with open(out_path, "wb") as f:
+        f.write(img_res.content)
+
+    print(f"Pexels fallback image saved to {out_path} (query: {query!r})")
+    return out_path
+    
+
+
 def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
     """
     Generates a short two-part on-screen caption from the fact: a hook line
@@ -454,14 +548,6 @@ def generate_background_image(
     width: int = 1152,
     height: int = 1440,
 ) -> str:
-    """
-    Generates a background image matching the fact, via FLUX.1-schnell on
-    Hugging Face's Inference API -- same model/provider pattern as
-    coffee.py, but the prompt is derived from the fact's content rather
-    than a fixed subject pool. width/height default to a 4:5 ratio
-    (wider than pure 9:16) to leave headroom for any pan/zoom motion
-    applied downstream, same reasoning as coffee.py's aspect adjustment.
-    """
     from huggingface_hub import InferenceClient
 
     image_prompt = build_image_prompt_with_groq(fact_text)
@@ -486,7 +572,11 @@ def generate_background_image(
             last_err = e
             print(f"generate_background_image attempt {attempt + 1} failed ({e}); retrying...")
 
-    raise RuntimeError(f"Background image generation failed after retries: {last_err}")
+    print(f"FLUX generation failed after retries ({last_err}); falling back to Pexels.")
+    try:
+        return fetch_pexels_image(fact_text, out_path)
+    except Exception as e:
+        raise RuntimeError(f"Both FLUX and Pexels fallback failed. FLUX error: {last_err}. Pexels error: {e}")
 
 
 # ---------------------------------------------------------------------------

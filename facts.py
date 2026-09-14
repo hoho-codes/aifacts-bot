@@ -26,7 +26,7 @@ FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
 # runners are ephemeral) so facts already used never get pulled again,
 # even before Groq ranks the batch.
 USED_FACTS_FILENAME = "data/used_facts.json"
-MAX_USED_FACTS_HISTORY = 1000  # trim oldest entries beyond this to keep the file small
+MAX_USED_FACTS_HISTORY = 100  # trim oldest entries beyond this to keep the file small
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")

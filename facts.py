@@ -217,7 +217,7 @@ def fetch_random_fact() -> str:
 
 
 def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str]:
-     """
+    """
     Fetches n raw facts from the uselessfacts API (one request per fact --
     the API has no bulk endpoint). Each slot gets its own 3-attempt retry
     loop, same pattern as fetch_random_fact(), and skips duplicates so the
@@ -230,7 +230,7 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
     too few candidates come back, tops up with FALLBACK_FACTS (also
     filtered against `excluded`) so selection still has enough to choose
     from.
-    """    
+    """
     if excluded is None:
         excluded = set()
 

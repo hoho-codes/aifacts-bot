@@ -52,6 +52,21 @@ FALLBACK_FACTS = [
     "Bananas are berries, but strawberries aren't.",
     "A day on Venus is longer than a year on Venus.",
     "Wombat poop is cube-shaped.",
+    "The Eiffel Tower can grow taller in summer due to thermal expansion of the iron.",
+    "A group of flamingos is called a 'flamboyance'.",
+    "Sharks existed before trees.",
+    "The shortest war in history lasted 38 minutes.",
+    "A single cloud can weigh more than a million pounds.",
+    "Humans share about 60% of their DNA with bananas.",
+    "The inventor of the Pringles can is buried in one.",
+    "It's illegal to own just one guinea pig in Switzerland.",
+    "The Great Emu War of 1932 was won by the emus.",
+    "There are more possible chess games than atoms in the observable universe.",
+    "Cows have best friends and get stressed when separated.",
+    "A bolt of lightning is hotter than the surface of the sun.",
+    "The unicorn is Scotland's national animal.",
+    "Some turtles can breathe through their butts.",
+    "Napoleon was once attacked by a horde of rabbits."
 ]
 
 # IMAGE_STYLE_MODIFIERS = [

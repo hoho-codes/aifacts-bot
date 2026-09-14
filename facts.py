@@ -21,6 +21,7 @@ import requests
 import glob
 
 FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
+OPENTDB_URL = "https://opentdb.com/api.php?amount=1"
 
 # Persisted across runs (and committed to the repo, since GitHub Actions
 # runners are ephemeral) so facts already used never get pulled again,
@@ -172,6 +173,29 @@ def commit_used_facts():
 # 1. Fetch a raw fact from the free uselessfacts API
 # ---------------------------------------------------------------------------
 
+def fetch_from_opentdb() -> str | None:
+    """
+    Secondary fact source: Open Trivia DB. Returns a question+answer
+    merged into a single statement-like string, or None if it fails --
+    caller decides how to fall back further.
+    """
+    import html
+    try:
+        res = requests.get(OPENTDB_URL, timeout=15)
+        res.raise_for_status()
+        data = res.json()
+        if data.get("response_code") != 0:
+            raise ValueError(f"OpenTDB response_code={data.get('response_code')}")
+        result = data["results"][0]
+        question = html.unescape(result["question"])
+        answer = html.unescape(result["correct_answer"])
+        combined = f"{question} The answer is: {answer}."
+        print(f"Fetched from OpenTDB: {combined}")
+        return combined
+    except Exception as e:
+        print(f"fetch_from_opentdb failed ({e})")
+        return None
+
 def fetch_random_fact() -> str:
     last_err = None
     for attempt in range(3):
@@ -193,7 +217,7 @@ def fetch_random_fact() -> str:
 
 
 def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str]:
-    """
+     """
     Fetches n raw facts from the uselessfacts API (one request per fact --
     the API has no bulk endpoint). Each slot gets its own 3-attempt retry
     loop, same pattern as fetch_random_fact(), and skips duplicates so the
@@ -206,7 +230,7 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
     too few candidates come back, tops up with FALLBACK_FACTS (also
     filtered against `excluded`) so selection still has enough to choose
     from.
-    """
+    """    
     if excluded is None:
         excluded = set()
 
@@ -215,6 +239,7 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
 
     for i in range(n):
         last_err = None
+        got_one = False
         for attempt in range(5):
             try:
                 res = requests.get(FACTS_API_URL, timeout=15)
@@ -231,12 +256,23 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
                 seen.add(norm)
                 facts.append(fact)
                 print(f"Fetched candidate {i + 1}/{n}: {fact}")
+                got_one = True
                 break
             except Exception as e:
                 last_err = e
                 print(f"fetch_random_facts candidate {i + 1} attempt {attempt + 1} failed ({e}); retrying...")
-        else:
-            print(f"Failed to fetch candidate {i + 1}/{n} after retries ({last_err}); skipping.")
+
+        if not got_one:
+            print(f"uselessfacts exhausted for candidate {i + 1}; trying OpenTDB instead.")
+            fallback = fetch_from_opentdb()
+            if fallback:
+                norm = normalize_fact(fallback)
+                if norm not in seen and norm not in excluded:
+                    seen.add(norm)
+                    facts.append(fallback)
+                    print(f"Fetched candidate {i + 1}/{n} from OpenTDB: {fallback}")
+                    continue
+            print(f"Failed to fetch candidate {i + 1}/{n} from any source ({last_err}); skipping.")
 
     if len(facts) < 2:
         print("Too few candidates fetched; topping up with fallback facts.")

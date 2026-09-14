@@ -11,14 +11,22 @@ ffmpeg must be available on PATH (already true on ubuntu-latest runners).
 """
 
 import asyncio
+import json
 import os
 import random
+import re
 import subprocess
 import textwrap
 import requests
 import glob
 
 FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
+
+# Persisted across runs (and committed to the repo, since GitHub Actions
+# runners are ephemeral) so facts already used never get pulled again,
+# even before Groq ranks the batch.
+USED_FACTS_FILENAME = "data/used_facts.json"
+MAX_USED_FACTS_HISTORY = 1000  # trim oldest entries beyond this to keep the file small
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
@@ -91,6 +99,76 @@ def weighted_choice(pairs):
     return random.choices(items, weights=weights, k=1)[0]
 
 # ---------------------------------------------------------------------------
+# Used-fact history (persisted to disk + committed to repo)
+# ---------------------------------------------------------------------------
+
+def normalize_fact(text: str) -> str:
+    """
+    Normalizes a fact for dedup comparison: lowercase, punctuation
+    stripped, whitespace collapsed. This catches near-identical facts
+    that differ only in trailing punctuation/casing/whitespace, which
+    a plain string-equality check would treat as distinct.
+    """
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def load_used_facts() -> list[str]:
+    """
+    Loads the history of previously-used facts (already normalized) as
+    an ordered list (oldest first). Returns an empty list if the file
+    doesn't exist yet or can't be parsed.
+    """
+    if not os.path.exists(USED_FACTS_FILENAME):
+        return []
+    try:
+        with open(USED_FACTS_FILENAME, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return [str(x) for x in data]
+        print(f"Unexpected format in {USED_FACTS_FILENAME}; ignoring existing history.")
+        return []
+    except Exception as e:
+        print(f"Failed to load {USED_FACTS_FILENAME} ({e}); starting with empty history.")
+        return []
+
+
+def save_used_facts(used_facts: list[str]) -> None:
+    """
+    Saves the used-fact history, trimming to the most recent
+    MAX_USED_FACTS_HISTORY entries so the file doesn't grow unbounded.
+    """
+    trimmed = used_facts[-MAX_USED_FACTS_HISTORY:]
+    os.makedirs(os.path.dirname(USED_FACTS_FILENAME), exist_ok=True)
+    with open(USED_FACTS_FILENAME, "w", encoding="utf-8") as f:
+        json.dump(trimmed, f, indent=2)
+
+
+def commit_used_facts():
+    """
+    Commits and pushes the used-facts history file, same pattern as
+    commit_video(). Done as soon as a fact is chosen (before the rest
+    of the pipeline runs) so that even if a later step fails, the fact
+    is still marked used and won't be repeated tomorrow.
+    """
+    print("Committing used-facts history to repo...")
+    subprocess.run(["git", "config", "user.name", "facts-bot"])
+    subprocess.run(["git", "config", "user.email", "facts-bot@users.noreply.github.com"])
+    subprocess.run(["git", "add", USED_FACTS_FILENAME])
+    commit_result = subprocess.run(["git", "commit", "-m", "Update used-facts history"], capture_output=True, text=True)
+    if commit_result.returncode != 0:
+        print(f"Nothing to commit or commit failed:\n{commit_result.stderr}")
+        return
+    push_result = subprocess.run(["git", "push"], capture_output=True, text=True)
+    if push_result.returncode != 0:
+        print(f"Used-facts history push failed:\n{push_result.stderr}")
+    else:
+        print("Used-facts history committed and pushed successfully.")
+
+
+# ---------------------------------------------------------------------------
 # 1. Fetch a raw fact from the free uselessfacts API
 # ---------------------------------------------------------------------------
 
@@ -114,21 +192,30 @@ def fetch_random_fact() -> str:
     return random.choice(FALLBACK_FACTS)
 
 
-def fetch_random_facts(n: int = 5) -> list[str]:
+def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str]:
     """
     Fetches n raw facts from the uselessfacts API (one request per fact --
     the API has no bulk endpoint). Each slot gets its own 3-attempt retry
     loop, same pattern as fetch_random_fact(), and skips duplicates so the
-    batch given to Groq is actually n distinct options. If too few facts
-    come back, tops up with FALLBACK_FACTS so selection still has enough
-    to choose from.
+    batch given to Groq is actually n distinct options.
+
+    `excluded` is a set of normalized (see normalize_fact) facts that have
+    already been used in a previous video -- any candidate matching one of
+    these is rejected and retried, same as an in-batch duplicate, so
+    previously-used facts never even make it to Groq's ranking step. If
+    too few candidates come back, tops up with FALLBACK_FACTS (also
+    filtered against `excluded`) so selection still has enough to choose
+    from.
     """
+    if excluded is None:
+        excluded = set()
+
     facts = []
     seen = set()
 
     for i in range(n):
         last_err = None
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 res = requests.get(FACTS_API_URL, timeout=15)
                 res.raise_for_status()
@@ -136,9 +223,12 @@ def fetch_random_facts(n: int = 5) -> list[str]:
                 fact = data.get("text", "").strip()
                 if not fact:
                     raise ValueError("Empty fact text in response")
-                if fact in seen:
-                    raise ValueError("Duplicate fact, retrying for a fresh one")
-                seen.add(fact)
+                norm = normalize_fact(fact)
+                if norm in seen:
+                    raise ValueError("Duplicate fact within this batch, retrying for a fresh one")
+                if norm in excluded:
+                    raise ValueError("Fact already used in a previous video, retrying for a fresh one")
+                seen.add(norm)
                 facts.append(fact)
                 print(f"Fetched candidate {i + 1}/{n}: {fact}")
                 break
@@ -151,9 +241,12 @@ def fetch_random_facts(n: int = 5) -> list[str]:
     if len(facts) < 2:
         print("Too few candidates fetched; topping up with fallback facts.")
         for f in FALLBACK_FACTS:
-            if f not in seen:
+            norm = normalize_fact(f)
+            if norm in excluded:
+                continue
+            if norm not in seen:
                 facts.append(f)
-                seen.add(f)
+                seen.add(norm)
             if len(facts) >= max(n, 2):
                 break
 
@@ -300,11 +393,22 @@ def polish_fact_with_groq(raw_fact: str) -> str:
 
 def get_fact_script(n_candidates: int = 5) -> str:
     """
-    Convenience wrapper: fetch n candidate facts, let Groq pick the
-    most surprising one, then polish it into narration.
+    Convenience wrapper: fetch n candidate facts (excluding any already
+    used in a previous video), let Groq pick the most surprising one,
+    then polish it into narration. Records the chosen fact in the
+    used-facts history and commits it immediately, so it's excluded from
+    every future run even if a later pipeline step fails.
     """
-    candidates = fetch_random_facts(n_candidates)
+    used_facts = load_used_facts()
+    excluded = set(used_facts)
+
+    candidates = fetch_random_facts(n_candidates, excluded=excluded)
     best_fact = pick_best_fact_with_groq(candidates)
+
+    used_facts.append(normalize_fact(best_fact))
+    save_used_facts(used_facts)
+    commit_used_facts()
+
     return polish_fact_with_groq(best_fact)
 
 # ---------------------------------------------------------------------------

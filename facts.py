@@ -22,6 +22,8 @@ import glob
 
 FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en"
 OPENTDB_URL = "https://opentdb.com/api.php?amount=1"
+LOGFARE_URL = "https://logfare.ai/v1/images/generations"
+LOGFARE_MODEL = "flux-1-schnell"
 
 # Persisted across runs (and committed to the repo, since GitHub Actions
 # runners are ephemeral) so facts already used never get pulled again,
@@ -31,6 +33,7 @@ MAX_USED_FACTS_HISTORY = 100  # trim oldest entries beyond this to keep the file
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
+LOGFARE_TOKEN = os.environ.get("LOGFARE_TOKEN", "")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
 YT_CLIENT_ID = os.environ["YT_CLIENT_ID"]
@@ -695,7 +698,70 @@ def generate_caption_with_groq(fact_text: str) -> tuple[str, str]:
 
     print(f"Groq caption generation failed after retries ({last_err}); using fallback caption.")
     return fallback_hook, fallback_answer
-    
+
+
+def generate_logfare(prompt, model, token, width, height, output):
+    """
+    Generates an image via the Logfare API and saves it to `output`.
+    Raises on any failure (bad response shape, decode error, network
+    error) so the caller can fall through to the next image source.
+    """
+    import base64
+    import sys
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "size": f"{width}x{height}",
+    }
+    response = requests.post(
+        LOGFARE_URL,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        json=payload,
+        timeout=300,
+    )
+    response.raise_for_status()
+    data = response.json()
+    try:
+        image_b64 = data["data"][0]["b64_json"]
+    except (KeyError, IndexError, TypeError):
+        print("Unexpected Logfare response:", data, file=sys.stderr)
+        raise RuntimeError("Logfare did not return base64 image data.")
+    try:
+        image_bytes = base64.b64decode(image_b64)
+    except Exception as e:
+        raise RuntimeError(f"Failed to decode Logfare image: {e}")
+    with open(output, "wb") as f:
+        f.write(image_bytes)
+
+
+def fetch_logfare_image(fact_text: str, out_path: str, width: int = 1152, height: int = 1440) -> str:
+    """
+    Fallback background image source: Logfare, tried after FLUX fails
+    and before falling through to Pexels. Reuses the same image prompt
+    generation as FLUX (build_image_prompt_with_groq), since Logfare
+    is also a generative model, not a stock-photo search like Pexels.
+    """
+    if not LOGFARE_URL or not LOGFARE_TOKEN or not LOGFARE_MODEL:
+        raise RuntimeError("Logfare not configured (missing LOGFARE_URL/LOGFARE_TOKEN/LOGFARE_MODEL).")
+
+    image_prompt = build_image_prompt_with_groq(fact_text)
+
+    last_err = None
+    for attempt in range(2):
+        try:
+            generate_logfare(image_prompt, LOGFARE_MODEL, LOGFARE_TOKEN, width, height, out_path)
+            print(f"Logfare fallback image saved to {out_path}")
+            return out_path
+        except Exception as e:
+            last_err = e
+            print(f"fetch_logfare_image attempt {attempt + 1} failed ({e}); retrying...")
+
+    raise RuntimeError(f"Logfare failed after retries: {last_err}")
+
 
 def generate_background_image(
     fact_text: str,
@@ -727,11 +793,18 @@ def generate_background_image(
             last_err = e
             print(f"generate_background_image attempt {attempt + 1} failed ({e}); retrying...")
 
-    print(f"FLUX generation failed after retries ({last_err}); falling back to Pexels.")
+    print(f"FLUX generation failed after retries ({last_err}); trying Logfare.")
     try:
-        return fetch_pexels_image(fact_text, out_path)
-    except Exception as e:
-        raise RuntimeError(f"Both FLUX and Pexels fallback failed. FLUX error: {last_err}. Pexels error: {e}")
+        return fetch_logfare_image(fact_text, out_path, width=width, height=height)
+    except Exception as logfare_err:
+        print(f"Logfare fallback also failed ({logfare_err}); trying Pexels.")
+        try:
+            return fetch_pexels_image(fact_text, out_path)
+        except Exception as pexels_err:
+            raise RuntimeError(
+                f"All image sources failed. FLUX: {last_err}. "
+                f"Logfare: {logfare_err}. Pexels: {pexels_err}."
+            )
 
 
 # ---------------------------------------------------------------------------

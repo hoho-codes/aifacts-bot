@@ -33,7 +33,7 @@ MAX_USED_FACTS_HISTORY = 100  # trim oldest entries beyond this to keep the file
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-LOGFARE_TOKEN = os.environ.get("LOGFARE_TOKEN", "")
+LOGFARE_API_KEY = os.environ.get("LOGFARE_API_KEY", "")
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
 YT_CLIENT_ID = os.environ["YT_CLIENT_ID"]
@@ -745,15 +745,15 @@ def fetch_logfare_image(fact_text: str, out_path: str, width: int = 1152, height
     generation as FLUX (build_image_prompt_with_groq), since Logfare
     is also a generative model, not a stock-photo search like Pexels.
     """
-    if not LOGFARE_URL or not LOGFARE_TOKEN or not LOGFARE_MODEL:
-        raise RuntimeError("Logfare not configured (missing LOGFARE_URL/LOGFARE_TOKEN/LOGFARE_MODEL).")
+    if not LOGFARE_URL or not LOGFARE_API_KEY or not LOGFARE_MODEL:
+        raise RuntimeError("Logfare not configured (missing LOGFARE_URL/LOGFARE_API_KEY/LOGFARE_MODEL).")
 
     image_prompt = build_image_prompt_with_groq(fact_text)
 
     last_err = None
     for attempt in range(2):
         try:
-            generate_logfare(image_prompt, LOGFARE_MODEL, LOGFARE_TOKEN, width, height, out_path)
+            generate_logfare(image_prompt, LOGFARE_MODEL, LOGFARE_API_KEY, width, height, out_path)
             print(f"Logfare fallback image saved to {out_path}")
             return out_path
         except Exception as e:

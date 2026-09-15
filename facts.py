@@ -113,6 +113,21 @@ CAPTION_COLOR_PALETTES = [
     {"fontcolor": "0x7CFC00", "bordercolor": "0x0A1A00@0.9"},   # lawn green / dark
 ]
 
+FACT_SOURCE_INFO = {
+    "uselessfacts": {
+        "label": "uselessfacts.jsph.pl",
+        "url": "https://uselessfacts.jsph.pl/",
+    },
+    "opentdb": {
+        "label": "Open Trivia Database (OpenTDB)",
+        "url": "https://opentdb.com/",
+    },
+    "fallback": {
+        "label": "internal curated fact list",
+        "url": None,
+    },
+}
+
 def weighted_choice(pairs):
     items, weights = zip(*pairs)
     return random.choices(items, weights=weights, k=1)[0]
@@ -234,20 +249,11 @@ def fetch_random_fact() -> str:
     return random.choice(FALLBACK_FACTS)
 
 
-def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str]:
+def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[dict]:
     """
-    Fetches n raw facts from the uselessfacts API (one request per fact --
-    the API has no bulk endpoint). Each slot gets its own 3-attempt retry
-    loop, same pattern as fetch_random_fact(), and skips duplicates so the
-    batch given to Groq is actually n distinct options.
-
-    `excluded` is a set of normalized (see normalize_fact) facts that have
-    already been used in a previous video -- any candidate matching one of
-    these is rejected and retried, same as an in-batch duplicate, so
-    previously-used facts never even make it to Groq's ranking step. If
-    too few candidates come back, tops up with FALLBACK_FACTS (also
-    filtered against `excluded`) so selection still has enough to choose
-    from.
+    Returns a list of {"text": ..., "source": "uselessfacts" | "opentdb" | "fallback"}
+    dicts instead of bare strings, so the caller can credit whichever API
+    the eventually-chosen fact actually came from.
     """
     if excluded is None:
         excluded = set()
@@ -272,7 +278,7 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
                 if norm in excluded:
                     raise ValueError("Fact already used in a previous video, retrying for a fresh one")
                 seen.add(norm)
-                facts.append(fact)
+                facts.append({"text": fact, "source": "uselessfacts"})
                 print(f"Fetched candidate {i + 1}/{n}: {fact}")
                 got_one = True
                 break
@@ -287,7 +293,7 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
                 norm = normalize_fact(fallback)
                 if norm not in seen and norm not in excluded:
                     seen.add(norm)
-                    facts.append(fallback)
+                    facts.append({"text": fallback, "source": "opentdb"})
                     print(f"Fetched candidate {i + 1}/{n} from OpenTDB: {fallback}")
                     continue
             print(f"Failed to fetch candidate {i + 1}/{n} from any source ({last_err}); skipping.")
@@ -299,7 +305,7 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
             if norm in excluded:
                 continue
             if norm not in seen:
-                facts.append(f)
+                facts.append({"text": f, "source": "fallback"})
                 seen.add(norm)
             if len(facts) >= max(n, 2):
                 break
@@ -307,23 +313,15 @@ def fetch_random_facts(n: int = 5, excluded: set[str] | None = None) -> list[str
     return facts
 
 
-def pick_best_fact_with_groq(facts: list[str]) -> str:
-    """
-    Given a batch of raw candidate facts, asks Groq to pick the single
-    most surprising / disbelief-inducing one to build this video around --
-    same "surprising over dry trivia" framing as polish_fact_with_groq's
-    system instruction, but used here as a selection step over several
-    options rather than a rewrite of one. Falls back to random.choice
-    if Groq is unavailable or its reply can't be parsed into a valid index.
-    """
+def pick_best_fact_with_groq(facts: list[dict]) -> dict:
     if len(facts) <= 1:
-        return facts[0] if facts else random.choice(FALLBACK_FACTS)
+        return facts[0] if facts else {"text": random.choice(FALLBACK_FACTS), "source": "fallback"}
 
     if not GROQ_API_KEY:
         print("No GROQ_API_KEY set; picking a random candidate instead of ranking.")
         return random.choice(facts)
 
-    numbered = "\n".join(f"{i + 1}. {f}" for i, f in enumerate(facts))
+    numbered = "\n".join(f"{i + 1}. {f['text']}" for i, f in enumerate(facts))
 
     system_instruction = (
         "You are choosing which trivia fact to turn into a short-form video "
@@ -352,7 +350,7 @@ def pick_best_fact_with_groq(facts: list[str]) -> str:
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": numbered},
                     ],
-                    "max_tokens": 300,  # generous margin -- reasoning overhead eats the budget before the number comes out, same lesson as generate_youtube_title
+                    "max_tokens": 300,
                     "temperature": 0.7,
                     "reasoning_effort": "low",
                 },
@@ -372,7 +370,7 @@ def pick_best_fact_with_groq(facts: list[str]) -> str:
                 raise ValueError(f"Groq picked an out-of-range index: {raw!r}")
 
             chosen = facts[choice_idx]
-            print(f"Groq picked candidate #{choice_idx + 1}: {chosen}")
+            print(f"Groq picked candidate #{choice_idx + 1}: {chosen['text']}")
             return chosen
         except Exception as e:
             last_err = e
@@ -380,6 +378,7 @@ def pick_best_fact_with_groq(facts: list[str]) -> str:
 
     print(f"Groq fact selection failed after retries ({last_err}); picking a random candidate instead.")
     return random.choice(facts)
+
 
 # ---------------------------------------------------------------------------
 # 2. Polish the raw fact into a punchy short-form script via Groq
@@ -445,25 +444,25 @@ def polish_fact_with_groq(raw_fact: str) -> str:
 #     raw_fact = fetch_random_fact()
 #     return polish_fact_with_groq(raw_fact)
 
-def get_fact_script(n_candidates: int = 5) -> str:
+def get_fact_script(n_candidates: int = 5) -> tuple[str, str]:
     """
-    Convenience wrapper: fetch n candidate facts (excluding any already
-    used in a previous video), let Groq pick the most surprising one,
-    then polish it into narration. Records the chosen fact in the
-    used-facts history and commits it immediately, so it's excluded from
-    every future run even if a later pipeline step fails.
+    Returns (polished_script, fact_source_key), where fact_source_key is
+    one of "uselessfacts" / "opentdb" / "fallback" -- look it up in
+    FACT_SOURCE_INFO to get the display label + link for crediting.
     """
     used_facts = load_used_facts()
     excluded = set(used_facts)
 
     candidates = fetch_random_facts(n_candidates, excluded=excluded)
-    best_fact = pick_best_fact_with_groq(candidates)
+    best = pick_best_fact_with_groq(candidates)
+    best_fact, fact_source_key = best["text"], best["source"]
 
     used_facts.append(normalize_fact(best_fact))
     save_used_facts(used_facts)
     commit_used_facts()
 
-    return polish_fact_with_groq(best_fact)
+    return polish_fact_with_groq(best_fact), fact_source_key
+    
 
 # ---------------------------------------------------------------------------
 # 3. Generate a background image matching the fact via Groq + FLUX
@@ -584,14 +583,7 @@ def build_pexels_query_with_groq(fact_text: str) -> str:
     return " ".join(words)
 
 
-def fetch_pexels_image(fact_text: str, out_path: str) -> str:
-    """
-    Fallback background image source: searches Pexels' free stock photo
-    API and downloads the top result's portrait-oriented image. Used only
-    when FLUX generation fails entirely, so the pipeline still has a
-    usable (real, non-AI) background rather than failing the whole run.
-    Requires a free PEXELS_API_KEY from pexels.com/api.
-    """
+def fetch_pexels_image(fact_text: str, out_path: str) -> tuple[str, dict]:
     if not PEXELS_API_KEY:
         raise RuntimeError("No PEXELS_API_KEY set; cannot use Pexels fallback.")
 
@@ -611,7 +603,6 @@ def fetch_pexels_image(fact_text: str, out_path: str) -> str:
         raise RuntimeError(f"No Pexels results for query: {query!r}")
 
     photo = random.choice(photos)
-    # 'portrait' size is pre-cropped to a vertical aspect ratio by Pexels
     image_url = photo["src"]["portrait"]
 
     img_res = requests.get(image_url, timeout=30)
@@ -619,8 +610,16 @@ def fetch_pexels_image(fact_text: str, out_path: str) -> str:
     with open(out_path, "wb") as f:
         f.write(img_res.content)
 
-    print(f"Pexels fallback image saved to {out_path} (query: {query!r})")
-    return out_path
+    photographer = photo.get("photographer", "a Pexels contributor")
+    photo_page_url = photo.get("url", "https://www.pexels.com/")
+
+    print(f"Pexels fallback image saved to {out_path} (query: {query!r}, photographer: {photographer})")
+    source_info = {
+        "backend_label": "Pexels",
+        "label": f"photo by {photographer}",
+        "url": photo_page_url,
+    }
+    return out_path, source_info
     
 
 
@@ -738,13 +737,7 @@ def generate_logfare(prompt, model, token, width, height, output):
         f.write(image_bytes)
 
 
-def fetch_logfare_image(fact_text: str, out_path: str, width: int = 1152, height: int = 1440) -> str:
-    """
-    Fallback background image source: Logfare, tried after FLUX fails
-    and before falling through to Pexels. Reuses the same image prompt
-    generation as FLUX (build_image_prompt_with_groq), since Logfare
-    is also a generative model, not a stock-photo search like Pexels.
-    """
+def fetch_logfare_image(fact_text: str, out_path: str, width: int = 1152, height: int = 1440) -> tuple[str, dict]:
     if not LOGFARE_URL or not LOGFARE_API_KEY or not LOGFARE_MODEL:
         raise RuntimeError("Logfare not configured (missing LOGFARE_URL/LOGFARE_API_KEY/LOGFARE_MODEL).")
 
@@ -755,7 +748,11 @@ def fetch_logfare_image(fact_text: str, out_path: str, width: int = 1152, height
         try:
             generate_logfare(image_prompt, LOGFARE_MODEL, LOGFARE_API_KEY, width, height, out_path)
             print(f"Logfare fallback image saved to {out_path}")
-            return out_path
+            return out_path, {
+                "backend_label": "Logfare",
+                "label": LOGFARE_MODEL,
+                "url": "https://logfare.ai/",
+            }
         except Exception as e:
             last_err = e
             print(f"fetch_logfare_image attempt {attempt + 1} failed ({e}); retrying...")
@@ -768,7 +765,7 @@ def generate_background_image(
     out_path: str,
     width: int = 1152,
     height: int = 1440,
-) -> str:
+) -> tuple[str, dict]:
     from huggingface_hub import InferenceClient
 
     image_prompt = build_image_prompt_with_groq(fact_text)
@@ -788,7 +785,11 @@ def generate_background_image(
             )
             image.save(out_path)
             print(f"Background image saved to {out_path}")
-            return out_path
+            return out_path, {
+                "backend_label": "Hugging Face Inference",
+                "label": "FLUX.1 [schnell]",
+                "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+            }
         except Exception as e:
             last_err = e
             print(f"generate_background_image attempt {attempt + 1} failed ({e}); retrying...")
@@ -805,7 +806,7 @@ def generate_background_image(
                 f"All image sources failed. FLUX: {last_err}. "
                 f"Logfare: {logfare_err}. Pexels: {pexels_err}."
             )
-
+            
 
 # ---------------------------------------------------------------------------
 # 4. Text-to-speech narration via edge-tts
@@ -1350,8 +1351,32 @@ def generate_youtube_title(fact_text: str) -> str:
     return base_title + SHORTS_TAG
 
 
-def generate_youtube_description(fact_text: str) -> str:
-    fallback_description = f"{fact_text}\n\n#facts #shorts #didyouknow"
+def build_credits_block(fact_source: dict, image_source: dict) -> str:
+    """
+    Builds a short, YouTube-friendly credits block naming the fact API
+    and the image backend/model actually used for this video. Built in
+    code rather than by Groq so the links are always exactly right.
+    """
+    lines = ["🔧 Made with:"]
+
+    if fact_source.get("url"):
+        lines.append(f"📚 Fact: {fact_source['label']} — {fact_source['url']}")
+    else:
+        lines.append(f"📚 Fact: {fact_source['label']}")
+
+    if image_source.get("url"):
+        lines.append(
+            f"🎨 Image: {image_source['backend_label']} ({image_source['label']}) — {image_source['url']}"
+        )
+    else:
+        lines.append(f"🎨 Image: {image_source['backend_label']} ({image_source['label']})")
+
+    return "\n".join(lines)
+
+
+def generate_youtube_description(fact_text: str, fact_source: dict, image_source: dict) -> str:
+    credits = build_credits_block(fact_source, image_source)
+    fallback_description = f"{fact_text}\n\n#facts #shorts #didyouknow\n\n{credits}"
 
     if not GROQ_API_KEY:
         print("No GROQ_API_KEY set; using fallback description.")
@@ -1381,7 +1406,7 @@ def generate_youtube_description(fact_text: str) -> str:
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": fact_text},
                     ],
-                    "max_tokens": 500,   # was 200 -- reasoning overhead was eating most of the budget
+                    "max_tokens": 500,
                     "temperature": 0.9,
                     "reasoning_effort": "low",
                 },
@@ -1394,15 +1419,17 @@ def generate_youtube_description(fact_text: str) -> str:
                 print(f"Warning: description generation hit the token limit (finish_reason=length): {description!r}")
             if not description or len(description) < 30:
                 raise ValueError(f"Groq returned an empty or suspiciously short description: {description!r}")
-            print(f"Generated description: {description}")
-            return description
+
+            full_description = f"{description}\n\n{credits}"
+            print(f"Generated description: {full_description}")
+            return full_description
         except Exception as e:
             last_err = e
             print(f"generate_youtube_description attempt {attempt + 1} failed ({e}); retrying...")
 
     print(f"Groq description generation failed after retries ({last_err}); using fallback description.")
     return fallback_description
-
+    
 
 def commit_video():
     """
@@ -1427,9 +1454,11 @@ def commit_video():
 
 
 def main():
-    fact = get_fact_script()
+    fact, fact_source_key = get_fact_script()
+    fact_source = FACT_SOURCE_INFO[fact_source_key]
+
     hook, answer = generate_caption_with_groq(fact)
-    generate_background_image(fact, IMAGE_FILENAME)
+    _, image_source = generate_background_image(fact, IMAGE_FILENAME)
     narration_path = generate_narration(fact, AUDIO_FILENAME)
     duration = get_audio_duration(narration_path)
     _, palette = render_caption_video(IMAGE_FILENAME, hook, answer, CAP_VIDEO_FILENAME, duration)
@@ -1446,7 +1475,7 @@ def main():
     commit_video()
 
     title = generate_youtube_title(fact)
-    description = generate_youtube_description(fact)
+    description = generate_youtube_description(fact, fact_source, image_source)
 
     res = publish_to_youtube(VIDEO_FILENAME, title, description, tags=["facts", "shorts", "didyouknow"])
 

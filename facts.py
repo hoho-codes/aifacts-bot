@@ -116,11 +116,11 @@ CAPTION_COLOR_PALETTES = [
 FACT_SOURCE_INFO = {
     "uselessfacts": {
         "label": "uselessfacts.jsph.pl",
-        "url": "https://uselessfacts.jsph.pl/",
+        "url": "uselessfacts.jsph.pl/",
     },
     "opentdb": {
         "label": "Open Trivia Database (OpenTDB)",
-        "url": "https://opentdb.com/",
+        "url": "opentdb.com/",
     },
     "fallback": {
         "label": "internal curated fact list",
@@ -751,7 +751,7 @@ def fetch_logfare_image(fact_text: str, out_path: str, width: int = 1152, height
             return out_path, {
                 "backend_label": "Logfare",
                 "label": LOGFARE_MODEL,
-                "url": "https://logfare.ai/",
+                "url": "logfare.ai/",
             }
         except Exception as e:
             last_err = e
@@ -788,7 +788,7 @@ def generate_background_image(
             return out_path, {
                 "backend_label": "Hugging Face Inference",
                 "label": "FLUX.1 [schnell]",
-                "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+                "url": "huggingface.co/black-forest-labs/FLUX.1-schnell",
             }
         except Exception as e:
             last_err = e

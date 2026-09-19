@@ -813,7 +813,6 @@ def generate_background_image(
 # ---------------------------------------------------------------------------
 
 TTS_VOICES = [
-    "en-US-AriaNeural",
     "en-US-GuyNeural",
     "en-GB-RyanNeural",
 ]

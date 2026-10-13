@@ -27,7 +27,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install dependencies
-        run: pip install requests huggingface_hub edge-tts pillow
+        run: pip install -U requests huggingface_hub pillow edge-tts gTTS piper-tts
+
+      - name: Download Piper voice
+        run: |
+          mkdir -p models
+          B=https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium
+          curl -L -o models/en_US-lessac-medium.onnx $B/en_US-lessac-medium.onnx
+          curl -L -o models/en_US-lessac-medium.onnx.json $B/en_US-lessac-medium.onnx.json
 
       - name: Run daily fact short
         run: python facts.py

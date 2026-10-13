@@ -825,29 +825,73 @@ TTS_VOICES = [
     "en-GB-RyanNeural",
 ]
 
+PIPER_MODEL = os.environ.get("PIPER_MODEL", "models/en_US-lessac-medium.onnx")
+
 
 async def _generate_tts_async(text: str, voice: str, out_path: str) -> None:
     import edge_tts
     communicate = edge_tts.Communicate(text, voice, rate="-10%")
     await communicate.save(out_path)
 
+
+def _tts_gtts(text: str, out_path: str) -> None:
+    from gtts import gTTS
+    gTTS(text=text, lang="en", tld="co.uk").save(out_path)
+
+
+def _tts_piper(text: str, out_path: str) -> None:
+    import shutil
+    import tempfile
+    if not os.path.exists(PIPER_MODEL):
+        raise RuntimeError(f"Piper model not found at {PIPER_MODEL}")
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = os.path.join(tmp, "piper.wav")
+        subprocess.run(
+            ["python", "-m", "piper", "--model", PIPER_MODEL,
+             "--length_scale", "1.1",  # slightly slower, like edge's -10%
+             "--output_file", wav],
+            input=text.encode("utf-8"),
+            check=True, capture_output=True, timeout=120,
+        )
+        if not os.path.exists(wav) or os.path.getsize(wav) == 0:
+            raise RuntimeError("piper produced an empty file")
+        if out_path.lower().endswith(".mp3"):
+            subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-i", wav,
+                 "-codec:a", "libmp3lame", "-q:a", "4", out_path],
+                check=True, timeout=120,
+            )
+        else:
+            shutil.copy(wav, out_path)
+
+
 def generate_narration(text: str, out_path: str, voice: str = None) -> str:
     voice = voice or random.choice(TTS_VOICES)
-    print(f"Generating narration with voice: {voice}")
 
-    last_err = None
-    for attempt in range(3):
-        try:
-            asyncio.run(_generate_tts_async(text, voice, out_path))
-            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                print(f"Narration saved to {out_path}")
-                return out_path
-            raise RuntimeError("edge-tts produced an empty file")
-        except Exception as e:
-            last_err = e
-            print(f"generate_narration attempt {attempt + 1} failed ({e}); retrying...")
+    providers = [
+        ("edge-tts", lambda: asyncio.run(_generate_tts_async(text, voice, out_path)), 2),
+        ("gTTS", lambda: _tts_gtts(text, out_path), 2),
+        ("piper", lambda: _tts_piper(text, out_path), 1),
+    ]
 
-    raise RuntimeError(f"edge-tts failed after retries: {last_err}")
+    errors = []
+    for name, fn, attempts in providers:
+        print(f"Generating narration with {name}"
+              + (f" (voice: {voice})" if name == "edge-tts" else ""))
+        for attempt in range(attempts):
+            try:
+                if os.path.exists(out_path):
+                    os.remove(out_path)  # never accept a stale/partial file
+                fn()
+                if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                    print(f"Narration saved to {out_path} via {name}")
+                    return out_path
+                raise RuntimeError(f"{name} produced an empty file")
+            except Exception as e:
+                errors.append(f"{name}#{attempt + 1}: {e}")
+                print(f"{name} attempt {attempt + 1} failed ({e})")
+
+    raise RuntimeError("All TTS providers failed: " + " | ".join(errors))
 
 
 def get_audio_duration(audio_path: str) -> float:
